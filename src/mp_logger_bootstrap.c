@@ -64,6 +64,7 @@ static int mp_logger_parse_port_value(const char *value, uint16_t *out_port) {
     return 1;
 }
 
+/* Trim leading and trailing ASCII whitespace in place while preserving an empty-string fallback. */
 void mp_logger_copy_trimmed(char *dest, size_t dest_capacity, const char *src) {
     size_t start = 0;
     size_t end = 0;
@@ -107,6 +108,7 @@ static mp_log_status_t mp_logger_apply_root_value(
     return MP_LOG_STATUS_CONFIG_ERROR;
 }
 
+/* Route each logger-scoped key through the right parser instead of guessing by value shape. */
 static mp_log_status_t mp_logger_apply_logger_value(
     const char *key,
     const char *value,
@@ -228,6 +230,7 @@ static mp_log_status_t mp_logger_apply_udp_value(
     return MP_LOG_STATUS_CONFIG_ERROR;
 }
 
+/* Keep section dispatch explicit so unknown sections and keys fail closed. */
 static mp_log_status_t mp_logger_apply_value(
     const char *section,
     const char *key,
@@ -254,6 +257,7 @@ static mp_log_status_t mp_logger_apply_value(
     return MP_LOG_STATUS_CONFIG_ERROR;
 }
 
+/* Centralize every documented default in one place so file-backed and code-backed config agree. */
 void mp_logger_config_init_defaults(mp_logger_config_t *config) {
     if (config == NULL) {
         return;
@@ -291,6 +295,7 @@ void mp_logger_config_init_defaults(mp_logger_config_t *config) {
     config->udp_port = 5514u;
 }
 
+/* Accept the documented level aliases while rejecting anything the logger would render ambiguously. */
 mp_log_status_t mp_logger_parse_level_name(const char *value, mp_log_level_t *out_level) {
     if (value == NULL || out_level == NULL) {
         return MP_LOG_STATUS_INVALID_ARGUMENT;
@@ -323,6 +328,7 @@ mp_log_status_t mp_logger_parse_level_name(const char *value, mp_log_level_t *ou
     return MP_LOG_STATUS_CONFIG_ERROR;
 }
 
+/* Restrict format parsing to the built-in text and JSON renderers. */
 mp_log_status_t mp_logger_parse_format_name(const char *value, mp_log_format_t *out_format) {
     if (value == NULL || out_format == NULL) {
         return MP_LOG_STATUS_INVALID_ARGUMENT;
@@ -338,6 +344,7 @@ mp_log_status_t mp_logger_parse_format_name(const char *value, mp_log_format_t *
     return MP_LOG_STATUS_CONFIG_ERROR;
 }
 
+/* Split the comma-separated stream list in place so builtin stream activation stays order-preserving. */
 int mp_logger_split_stream_list(
     const char *active_streams,
     char names[][32],
@@ -376,6 +383,11 @@ int mp_logger_split_stream_list(
     return 1;
 }
 
+/*
+ * Parse the bootstrap file one trimmed line at a time.
+ * The loader keeps section state explicitly and rejects malformed lines immediately so config
+ * errors do not turn into partial logger startup with guessed defaults.
+ */
 mp_log_status_t mp_logger_bootstrap_load(const char *config_path, mp_logger_config_t *out_config) {
     FILE *file = NULL;
     mp_logger_config_t config;

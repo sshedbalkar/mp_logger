@@ -32,6 +32,10 @@ static void mp_logger_make_run_suffix(char *buffer, size_t buffer_capacity) {
     }
 }
 
+/*
+ * Mirror newly observed drop counters into the backup logger so contention and saturation remain
+ * visible even when the primary queue is under pressure.
+ */
 static void mp_logger_flush_drop_counters(
     mp_logger_t *logger,
     uint64_t *last_busy_total,
@@ -66,6 +70,10 @@ static void mp_logger_flush_drop_counters(
     }
 }
 
+/*
+ * Dequeue into thread-local scratch buffers before invoking streams so callbacks never observe
+ * queue storage that is about to be reused by producers.
+ */
 static void *mp_logger_worker_main(void *context) {
     mp_logger_t *logger = (mp_logger_t *)context;
     char *message_buffer = NULL;
@@ -178,6 +186,7 @@ static int mp_logger_validate_config(const mp_logger_config_t *config) {
         config->log_directory[0] != '\0';
 }
 
+/* Allocate one contiguous queue slot array plus per-slot message and context backing storage. */
 static mp_log_status_t mp_logger_allocate_buffers(mp_logger_t *logger) {
     size_t index = 0;
     logger->slots = (mp_log_slot_t *)calloc(logger->config.buffer_capacity, sizeof(mp_log_slot_t));
@@ -199,6 +208,7 @@ static mp_log_status_t mp_logger_allocate_buffers(mp_logger_t *logger) {
     return MP_LOG_STATUS_OK;
 }
 
+/* Reject duplicate stream names up front so sink fanout remains deterministic. */
 mp_log_status_t mp_logger_add_owned_stream(mp_logger_t *logger, const mp_logger_stream_t *stream) {
     size_t index = 0;
     if (logger == NULL || stream == NULL || stream->write == NULL || stream->stream_name[0] == '\0') {
@@ -265,6 +275,10 @@ const char *mp_log_status_name(mp_log_status_t status) {
     }
 }
 
+/*
+ * Normalize file-safe prefixes and fully construct the logger before any handle escapes.
+ * Failures unwind through mp_logger_destroy() so partial allocation cleanup stays in one place.
+ */
 mp_log_status_t mp_logger_create(const mp_logger_config_t *config, mp_logger_t **out_logger) {
     mp_logger_t *logger = NULL;
     mp_log_status_t status = MP_LOG_STATUS_OK;
@@ -325,6 +339,7 @@ mp_log_status_t mp_logger_create(const mp_logger_config_t *config, mp_logger_t *
     return MP_LOG_STATUS_OK;
 }
 
+/* Bootstrap creation is all-or-nothing: config load, allocation, and worker start must all succeed. */
 mp_log_status_t mp_logger_create_from_bootstrap(const char *config_path, mp_logger_t **out_logger) {
     mp_logger_config_t config;
     mp_logger_t *logger = NULL;
@@ -368,6 +383,10 @@ mp_log_status_t mp_logger_start(mp_logger_t *logger) {
     return MP_LOG_STATUS_OK;
 }
 
+/*
+ * The producer path uses trylock so callers never block behind worker activity or slow sinks.
+ * Once admitted, the record is copied into preallocated slot storage and the worker is signaled.
+ */
 mp_log_status_t mp_logger_log(
     mp_logger_t *logger,
     mp_log_level_t level,
@@ -419,6 +438,7 @@ mp_log_status_t mp_logger_log(
     return MP_LOG_STATUS_OK;
 }
 
+/* Wait for the processed counter to catch up with the queued counter snapshot taken at entry. */
 mp_log_status_t mp_logger_flush(mp_logger_t *logger, uint32_t timeout_millis) {
     int64_t deadline_millis = 0;
     uint64_t target_processed = 0;
@@ -454,6 +474,10 @@ mp_log_status_t mp_logger_get_stats(const mp_logger_t *logger, mp_logger_stats_t
     return MP_LOG_STATUS_OK;
 }
 
+/*
+ * Signal shutdown first so the worker stops waiting for new records, then join with the platform
+ * timeout path when available.
+ */
 mp_log_status_t mp_logger_shutdown(mp_logger_t *logger, uint32_t timeout_millis) {
     if (logger == NULL) {
         return MP_LOG_STATUS_INVALID_ARGUMENT;
@@ -495,6 +519,7 @@ mp_log_status_t mp_logger_shutdown(mp_logger_t *logger, uint32_t timeout_millis)
     return MP_LOG_STATUS_OK;
 }
 
+/* Destroy runs the full teardown sequence even when callers forgot to stop the worker first. */
 void mp_logger_destroy(mp_logger_t *logger) {
     if (logger == NULL) {
         return;

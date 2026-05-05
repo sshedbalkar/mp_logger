@@ -154,6 +154,7 @@ static void benchmark_file_stream_destroy(void *stream_context) {
     free(stream);
 }
 
+/* Build a logger with one synthetic stream so throughput cases can vary buffer depth and sink delay. */
 static mp_logger_t *benchmark_create_logger(
     const char *backup_prefix,
     size_t buffer_capacity,
@@ -214,6 +215,7 @@ static mp_logger_t *benchmark_create_logger(
     return logger;
 }
 
+/* Add extra file sinks so one benchmark run can measure sequential worker fanout cost. */
 static void benchmark_add_custom_file_stream(
     mp_logger_t *logger,
     const char *stream_name,
@@ -253,6 +255,7 @@ static void benchmark_add_custom_file_stream(
     }
 }
 
+/* Start from the builtin file sink and layer on additional file streams that share the same run suffix. */
 static mp_logger_t *benchmark_create_file_logger(const char *backup_prefix, size_t total_file_streams) {
     mp_logger_config_t config;
     mp_logger_t *logger = NULL;
@@ -302,6 +305,7 @@ static mp_logger_t *benchmark_create_file_logger(const char *backup_prefix, size
     return logger;
 }
 
+/* Treat flush and shutdown failures as benchmark-fatal so printed tables never mix partial results. */
 static void benchmark_destroy_logger(mp_logger_t *logger) {
     if (logger == NULL) {
         return;
@@ -319,6 +323,7 @@ static void benchmark_destroy_logger(mp_logger_t *logger) {
     mp_logger_destroy(logger);
 }
 
+/* Drain the queue at measurement boundaries so processed counts line up with the benchmark window. */
 static void benchmark_flush_logger_or_die(mp_logger_t *logger) {
     if (logger == NULL) {
         return;
@@ -330,6 +335,7 @@ static void benchmark_flush_logger_or_die(mp_logger_t *logger) {
     }
 }
 
+/* Bucket enqueue results so later tables can distinguish lock contention from true queue saturation. */
 static void benchmark_record_status(producer_context_t *context, mp_log_status_t status) {
     atomic_fetch_add(&context->attempted, 1u);
     switch (status) {
@@ -348,6 +354,7 @@ static void benchmark_record_status(producer_context_t *context, mp_log_status_t
     }
 }
 
+/* Run busy-loop producers until the shared stop time to stress the non-blocking admission path. */
 static void *benchmark_producer_main(void *opaque_context) {
     producer_context_t *context = (producer_context_t *)opaque_context;
     while (benchmark_now_nanos() < context->stop_time_nanos) {
@@ -361,6 +368,7 @@ static void *benchmark_producer_main(void *opaque_context) {
     return NULL;
 }
 
+/* Measure aggregate admission and drain behavior while multiple producer threads race on one logger. */
 static benchmark_run_result_t benchmark_run_concurrency_case(size_t producer_threads, uint32_t duration_millis) {
     pthread_t *threads = NULL;
     producer_context_t *contexts = NULL;
@@ -423,6 +431,7 @@ static benchmark_run_result_t benchmark_run_concurrency_case(size_t producer_thr
     return result;
 }
 
+/* Measure steady-state file throughput by driving one thread as fast as possible for a fixed duration. */
 static benchmark_run_result_t benchmark_run_single_thread_file_case(
     size_t total_file_streams,
     uint32_t duration_millis) {
@@ -464,6 +473,7 @@ static benchmark_run_result_t benchmark_run_single_thread_file_case(
     return result;
 }
 
+/* Pace submissions to a target rate so the benchmark can detect the first rate that overflows. */
 static benchmark_run_result_t benchmark_run_paced_rate_case(
     size_t buffer_capacity,
     uint32_t sink_delay_micros,
@@ -506,6 +516,7 @@ static benchmark_run_result_t benchmark_run_paced_rate_case(
     return result;
 }
 
+/* Use binary search over paced rates to find the boundary between no-full and first-full behavior. */
 static benchmark_run_result_t benchmark_find_threshold_case(
     size_t buffer_capacity,
     uint32_t sink_delay_micros,
@@ -552,6 +563,7 @@ static benchmark_run_result_t benchmark_find_threshold_case(
     return failing_result;
 }
 
+/* Fill a logger before startup to show the queue full point is deterministic for each profile. */
 static void benchmark_run_prestart_fill_case(
     const benchmark_profile_t *profile,
     uint64_t *out_accepted_before_full,
@@ -592,6 +604,7 @@ static void benchmark_run_prestart_fill_case(
     mp_logger_destroy(logger);
 }
 
+/* Print the host metadata that makes the benchmark tables interpretable when copied into docs. */
 static void benchmark_print_environment(void) {
     struct utsname system_name;
     long cpu_count = sysconf(_SC_NPROCESSORS_ONLN);
@@ -653,6 +666,7 @@ static void benchmark_print_environment(void) {
     printf("- Build profile: `Release`\n\n");
 }
 
+/* Compare file throughput as sequential worker fanout increases from one stream to many. */
 static void benchmark_print_file_stream_table(void) {
     const size_t stream_counts[] = {1u, 2u, 4u, 8u};
     size_t index = 0u;
@@ -686,6 +700,7 @@ static void benchmark_print_file_stream_table(void) {
         MP_LOGGER_MAX_STREAMS);
 }
 
+/* Report reserved queue and worker scratch memory for each documented capacity profile. */
 static void benchmark_print_buffer_table(void) {
     size_t index = 0;
     printf("## Buffer Footprint\n\n");
@@ -708,6 +723,7 @@ static void benchmark_print_buffer_table(void) {
     printf("\n");
 }
 
+/* Summarize the exact enqueue call where each profile first reports queue saturation before startup. */
 static void benchmark_print_prestart_table(void) {
     size_t index = 0;
     printf("## Deterministic Queue Full Point\n\n");
@@ -727,6 +743,7 @@ static void benchmark_print_prestart_table(void) {
     printf("\n");
 }
 
+/* Print the overflow boundary for a deliberately slow sink using the paced-rate search helper. */
 static void benchmark_print_threshold_table(void) {
     benchmark_run_result_t failing_result;
     uint32_t safe_rate = 0u;
@@ -744,6 +761,7 @@ static void benchmark_print_threshold_table(void) {
         (unsigned long long)failing_result.full);
 }
 
+/* Show how accepted throughput and drop modes change as producer concurrency rises. */
 static void benchmark_print_concurrency_table(void) {
     size_t index = 0;
     const size_t thread_counts[] = {1u, 2u, 4u, 8u, 16u};
@@ -768,6 +786,7 @@ static void benchmark_print_concurrency_table(void) {
     printf("\n");
 }
 
+/* Close with the exact status mechanisms a reader should expect to see during overflow. */
 static void benchmark_print_overflow_summary(void) {
     printf("## Overflow Mechanisms Observed\n\n");
     printf("- `mp_logger_log()` returns `MP_LOG_STATUS_BUSY` when `pthread_mutex_trylock()` cannot acquire the queue mutex.\n");

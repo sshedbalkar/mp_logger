@@ -91,6 +91,7 @@ static void read_text_file(const char *path, char *buffer, size_t buffer_capacit
     assert(fclose(file) == 0);
 }
 
+/* Scan a test output directory for the one run-specific log file that matches the requested prefix. */
 static int find_file_with_prefix(
     const char *directory,
     const char *prefix,
@@ -113,6 +114,7 @@ static int find_file_with_prefix(
     return 0;
 }
 
+/* Clean prior run artifacts so file-based assertions only see output produced by this test case. */
 static void remove_files_with_prefix(const char *directory, const char *prefix) {
     DIR *dir = opendir(directory);
     struct dirent *entry = NULL;
@@ -131,6 +133,7 @@ static void remove_files_with_prefix(const char *directory, const char *prefix) 
     (void)closedir(dir);
 }
 
+/* Fill a pre-start queue to prove saturation is reported even before the worker thread runs. */
 static void test_queue_full_before_start(void) {
     mp_logger_config_t config;
     mp_logger_t *logger = NULL;
@@ -149,6 +152,7 @@ static void test_queue_full_before_start(void) {
     mp_logger_destroy(logger);
 }
 
+/* Register a custom sink and assert it receives the fully rendered message plus context text. */
 static void test_custom_stream_receives_formatted_message(void) {
     mp_logger_config_t config;
     mp_logger_t *logger = NULL;
@@ -185,6 +189,7 @@ static void test_custom_stream_receives_formatted_message(void) {
     mp_logger_destroy(logger);
 }
 
+/* Parse an INI override file and verify the loader updates every touched field. */
 static void test_bootstrap_load_applies_overrides(void) {
     const char *config_path = ".tmp/bootstrap-test.ini";
     mp_logger_config_t config;
@@ -229,6 +234,7 @@ static void test_bootstrap_load_applies_overrides(void) {
     assert(config.udp_port == 6500u);
 }
 
+/* Use the builtin file sink and then locate the per-run log file written by that logger instance. */
 static void test_file_stream_writes_new_run_file(void) {
     mp_logger_config_t config;
     mp_logger_t *logger = NULL;
@@ -264,6 +270,7 @@ static void test_file_stream_writes_new_run_file(void) {
     assert(strstr(log_contents, "backup path") != NULL);
 }
 
+/* Force queue saturation behind a slow custom stream and confirm the backup logger records the warning. */
 static void test_buffer_saturation_writes_backup_warning(void) {
     const char *log_directory = ".tmp/logger-overflow";
     mp_logger_config_t config;
@@ -326,6 +333,7 @@ static void test_buffer_saturation_writes_backup_warning(void) {
     assert(strstr(backup_contents, "buffer saturation dropped records") != NULL);
 }
 
+/* Add streams until the hard limit is reached and verify the next registration is rejected. */
 static void test_stream_limit_is_enforced(void) {
     mp_logger_config_t config;
     mp_logger_t *logger = NULL;

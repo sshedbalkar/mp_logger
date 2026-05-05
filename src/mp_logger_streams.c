@@ -54,6 +54,7 @@ static int mp_logger_copy_component(
     return 1;
 }
 
+/* Escape control characters as JSON sequences so records cannot break the rendered object shape. */
 static size_t mp_logger_append_json_escaped(
     char *buffer,
     size_t capacity,
@@ -96,6 +97,7 @@ static size_t mp_logger_append_json_escaped(
     return used;
 }
 
+/* Escape text output conservatively so control characters cannot forge extra text log lines. */
 static size_t mp_logger_append_text_escaped(
     char *buffer,
     size_t capacity,
@@ -146,6 +148,7 @@ static void mp_logger_finalize_buffer(char *buffer, size_t capacity, size_t used
     buffer[used] = '\0';
 }
 
+/* Build either ./prefix.suffix.log or directory/prefix.suffix.log without heap allocation. */
 static int mp_logger_make_stream_path(
     char *buffer,
     size_t buffer_capacity,
@@ -258,6 +261,7 @@ static void mp_logger_destroy_udp_stream(void *stream_context) {
     free(state);
 }
 
+/* Wrap stdout and stderr in the same file-stream callback shape used by regular file sinks. */
 static mp_log_status_t mp_logger_make_stdio_stream(
     const char *name,
     FILE *file_handle,
@@ -285,6 +289,7 @@ static mp_log_status_t mp_logger_make_stdio_stream(
     return MP_LOG_STATUS_OK;
 }
 
+/* Create a per-run file sink after sanitizing the configured prefix and ensuring the directory exists. */
 static mp_log_status_t mp_logger_make_file_stream(
     mp_logger_t *logger,
     mp_logger_stream_t *out_stream) {
@@ -329,6 +334,7 @@ static mp_log_status_t mp_logger_make_file_stream(
     return MP_LOG_STATUS_OK;
 }
 
+/* Resolve the configured UDP endpoint once during startup and keep the socket state in the stream context. */
 static mp_log_status_t mp_logger_make_udp_stream(
     const mp_logger_t *logger,
     mp_logger_stream_t *out_stream) {
@@ -392,6 +398,7 @@ int64_t mp_logger_now_millis(void) {
     return (int64_t)now.tv_sec * 1000 + (int64_t)(now.tv_nsec / 1000000);
 }
 
+/* Format all timestamps as UTC RFC3339-style strings with millisecond precision. */
 void mp_logger_format_timestamp(int64_t unix_epoch_millis, char *buffer, size_t buffer_capacity) {
     struct tm utc_time;
     time_t seconds = (time_t)(unix_epoch_millis / 1000);
@@ -491,6 +498,10 @@ int mp_logger_level_in_range(
     return level >= minimum && level <= maximum;
 }
 
+/*
+ * Render every record from the structured fields rather than letting sinks rebuild their own view.
+ * That keeps JSON/text formatting, escaping, and optional context handling consistent everywhere.
+ */
 size_t mp_logger_render_record(
     const mp_logger_t *logger,
     const mp_log_record_t *record,
@@ -616,6 +627,7 @@ size_t mp_logger_render_record(
     return strlen(buffer);
 }
 
+/* Open the internal backup file before primary streams so logger-internal warnings always have a sink. */
 mp_log_status_t mp_logger_backup_open(mp_logger_t *logger) {
     char prefix[MP_LOGGER_NAME_CAPACITY];
     if (logger == NULL) {
@@ -655,6 +667,7 @@ void mp_logger_backup_close(mp_logger_t *logger) {
     }
 }
 
+/* Serialize backup writes because worker and producer-side warning paths can race each other. */
 void mp_logger_backup_write(mp_logger_t *logger, const char *severity, const char *message) {
     char line[512];
     char timestamp[MP_LOGGER_TIMESTAMP_CAPACITY];
@@ -679,6 +692,7 @@ void mp_logger_backup_write(mp_logger_t *logger, const char *severity, const cha
     (void)pthread_mutex_unlock(&logger->backup_logger.mutex);
 }
 
+/* Destroy every registered stream under the stream mutex so callbacks cannot race teardown. */
 void mp_logger_destroy_streams(mp_logger_t *logger) {
     size_t index = 0;
     if (logger == NULL) {
@@ -695,6 +709,11 @@ void mp_logger_destroy_streams(mp_logger_t *logger) {
     (void)pthread_mutex_unlock(&logger->stream_mutex);
 }
 
+/*
+ * Build the configured builtin stream set in declaration order.
+ * Individual builtin initialization failures are mirrored to the backup logger so startup remains
+ * observable even when only part of the configured sink set can be activated.
+ */
 mp_log_status_t mp_logger_build_builtin_streams(mp_logger_t *logger) {
     char names[MP_LOGGER_MAX_STREAMS][32];
     size_t name_count = 0;

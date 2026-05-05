@@ -18,6 +18,7 @@ import (
 
 const maxTimeoutMillis = int64(^uint32(0))
 
+// Level mirrors the C log severity enum used by queue admission and sink filtering.
 type Level int
 
 const (
@@ -29,10 +30,12 @@ const (
 	Fatal   Level = Level(C.MP_LOG_LEVEL_FATAL)
 )
 
+// String returns the stable uppercase name used by the C logger for this level.
 func (level Level) String() string {
 	return C.GoString(C.mp_log_level_name(C.mp_log_level_t(level)))
 }
 
+// Format selects the rendered wire format emitted to every configured sink.
 type Format int
 
 const (
@@ -40,6 +43,7 @@ const (
 	JSON Format = Format(C.MP_LOG_FORMAT_JSON)
 )
 
+// Status mirrors the C status codes returned by lifecycle and enqueue operations.
 type Status int
 
 const (
@@ -54,15 +58,18 @@ const (
 	StatusLimitExceeded   Status = Status(C.MP_LOG_STATUS_LIMIT_EXCEEDED)
 )
 
+// String returns the stable uppercase name used by the C logger for this status.
 func (status Status) String() string {
 	return C.GoString(C.mp_log_status_name(C.mp_log_status_t(status)))
 }
 
+// StatusError wraps a non-OK C status with the operation that produced it.
 type StatusError struct {
 	Op     string
 	Status Status
 }
 
+// Error renders the operation name and logger status in a human-readable form.
 func (err *StatusError) Error() string {
 	if err == nil {
 		return "<nil>"
@@ -73,8 +80,10 @@ func (err *StatusError) Error() string {
 	return fmt.Sprintf("%s: %s", err.Op, err.Status)
 }
 
+// ErrClosed reports that a method was called after Close released the C logger.
 var ErrClosed = errors.New("mp_logger: logger closed")
 
+// Config mirrors mp_logger_config_t so Go callers can build or load logger settings.
 type Config struct {
 	ServiceName          string
 	EnvironmentName      string
@@ -99,6 +108,7 @@ type Config struct {
 	UDPPort              uint16
 }
 
+// Stats mirrors mp_logger_stats_t so Go callers can observe queue pressure and drops.
 type Stats struct {
 	QueuedRecords     uint64
 	ProcessedRecords  uint64
@@ -107,17 +117,20 @@ type Stats struct {
 	ActiveStreamCount int
 }
 
+// Logger owns the underlying C logger pointer and serializes access to Close.
 type Logger struct {
 	mu  sync.RWMutex
 	ptr *C.mp_logger_t
 }
 
+// DefaultConfig returns the library defaults from mp_logger_config_init_defaults().
 func DefaultConfig() Config {
 	var config C.mp_logger_config_t
 	C.mp_logger_config_init_defaults(&config)
 	return configFromC(config)
 }
 
+// LoadBootstrapConfig parses a bootstrap INI file into a Config without creating a logger.
 func LoadBootstrapConfig(path string) (Config, error) {
 	cPath := C.CString(path)
 	defer C.free(unsafe.Pointer(cPath))
@@ -130,6 +143,7 @@ func LoadBootstrapConfig(path string) (Config, error) {
 	return configFromC(config), nil
 }
 
+// Create allocates a logger from config without starting the worker thread.
 func Create(config Config) (*Logger, error) {
 	cConfig, err := config.toC()
 	if err != nil {
@@ -144,6 +158,7 @@ func Create(config Config) (*Logger, error) {
 	return &Logger{ptr: logger}, nil
 }
 
+// CreateFromBootstrap loads a bootstrap file, creates the logger, and starts the worker.
 func CreateFromBootstrap(path string) (*Logger, error) {
 	cPath := C.CString(path)
 	defer C.free(unsafe.Pointer(cPath))
@@ -156,12 +171,14 @@ func CreateFromBootstrap(path string) (*Logger, error) {
 	return &Logger{ptr: logger}, nil
 }
 
+// Start launches the worker thread that drains queued records to sinks.
 func (logger *Logger) Start() error {
 	return logger.withPtr("start", func(ptr *C.mp_logger_t) C.mp_log_status_t {
 		return C.mp_logger_start(ptr)
 	})
 }
 
+// Log attempts to enqueue one record without blocking on sink I/O.
 func (logger *Logger) Log(level Level, message string, context string) error {
 	messageText := C.CString(message)
 	defer C.free(unsafe.Pointer(messageText))
@@ -177,6 +194,7 @@ func (logger *Logger) Log(level Level, message string, context string) error {
 	})
 }
 
+// Flush waits until records queued before the call are processed or the timeout expires.
 func (logger *Logger) Flush(timeout time.Duration) error {
 	timeoutMillis, err := durationToMillis(timeout)
 	if err != nil {
@@ -188,6 +206,7 @@ func (logger *Logger) Flush(timeout time.Duration) error {
 	})
 }
 
+// Stats returns a snapshot of cumulative queue and drop counters.
 func (logger *Logger) Stats() (Stats, error) {
 	logger.mu.RLock()
 	defer logger.mu.RUnlock()
@@ -209,6 +228,7 @@ func (logger *Logger) Stats() (Stats, error) {
 	}, nil
 }
 
+// Shutdown asks the worker to drain queued records and stop before the timeout expires.
 func (logger *Logger) Shutdown(timeout time.Duration) error {
 	timeoutMillis, err := durationToMillis(timeout)
 	if err != nil {
@@ -220,6 +240,7 @@ func (logger *Logger) Shutdown(timeout time.Duration) error {
 	})
 }
 
+// Close destroys the underlying C logger and makes future method calls return ErrClosed.
 func (logger *Logger) Close() {
 	logger.mu.Lock()
 	ptr := logger.ptr

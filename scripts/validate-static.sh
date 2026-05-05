@@ -13,6 +13,7 @@ total=0
 mkdir -p "$report_dir"
 : > "$detail"
 
+# Record one validation row and update the pass counters used for the final score.
 record() {
   local status="$1"
   local check_id="$2"
@@ -25,14 +26,17 @@ record() {
   printf '%s\t%s\t%s\t%s\n' "$status" "$check_id" "$description" "$evidence" >> "$detail"
 }
 
+# Mark one validation check as passed.
 pass() {
   record "PASS" "$1" "$2" "$3"
 }
 
+# Mark one validation check as failed.
 fail() {
   record "FAIL" "$1" "$2" "$3"
 }
 
+# Require a file to exist at a fixed repository path.
 require_file() {
   local check_id="$1"
   local path="$2"
@@ -44,6 +48,7 @@ require_file() {
   fi
 }
 
+# Require an exact text snippet so durable docs and rules stay easy to audit.
 require_contains() {
   local check_id="$1"
   local path="$2"
@@ -53,6 +58,36 @@ require_contains() {
     pass "$check_id" "$description" "$path contains: $needle"
   else
     fail "$check_id" "$description" "$path missing: $needle"
+  fi
+}
+
+# Require a function declaration or definition to have an immediately preceding comment block.
+require_comment_before() {
+  local check_id="$1"
+  local path="$2"
+  local needle="$3"
+  local description="$4"
+  if awk -v needle="$needle" '
+    { lines[NR] = $0 }
+    END {
+      for (i = 1; i <= NR; i++) {
+        if (index(lines[i], needle) > 0) {
+          j = i - 1
+          while (j >= 1 && lines[j] ~ /^[[:space:]]*$/) {
+            j--
+          }
+          if (j >= 1 && lines[j] ~ /^[[:space:]]*(\/\/|\/\*|\*|\*\/)/) {
+            exit 0
+          }
+          exit 1
+        }
+      }
+      exit 1
+    }
+  ' "$path"; then
+    pass "$check_id" "$description" "$path matches: $needle"
+  else
+    fail "$check_id" "$description" "$path missing comment before: $needle"
   fi
 }
 
@@ -120,6 +155,40 @@ require_contains "backup.logger" src/mp_logger_streams.c "mp_logger_backup_write
 require_contains "config.active-streams" configs/logger.bootstrap.ini "active_streams =" "bootstrap config declares active streams"
 require_contains "docs.non-blocking" docs/standards.md "non-blocking" "standards doc records non-blocking rule"
 require_contains "docs.pluggable" docs/architecture.md "pluggable" "architecture doc records stream extensibility"
+require_comment_before "comment.header.defaults" include/mp_logger.h 'void mp_logger_config_init_defaults(' "public header documents config default initialization"
+require_comment_before "comment.header.bootstrap" include/mp_logger.h 'mp_log_status_t mp_logger_bootstrap_load(' "public header documents bootstrap loading"
+require_comment_before "comment.header.create" include/mp_logger.h 'mp_log_status_t mp_logger_create(' "public header documents logger creation"
+require_comment_before "comment.header.create-bootstrap" include/mp_logger.h 'mp_log_status_t mp_logger_create_from_bootstrap(' "public header documents bootstrap-based creation"
+require_comment_before "comment.header.add-stream" include/mp_logger.h 'mp_log_status_t mp_logger_add_stream(' "public header documents custom stream registration"
+require_comment_before "comment.header.start" include/mp_logger.h 'mp_log_status_t mp_logger_start(' "public header documents worker startup"
+require_comment_before "comment.header.log" include/mp_logger.h 'mp_log_status_t mp_logger_log(' "public header documents enqueue semantics"
+require_comment_before "comment.header.flush" include/mp_logger.h 'mp_log_status_t mp_logger_flush(' "public header documents flush semantics"
+require_comment_before "comment.header.stats" include/mp_logger.h 'mp_log_status_t mp_logger_get_stats(' "public header documents stats retrieval"
+require_comment_before "comment.header.shutdown" include/mp_logger.h 'mp_log_status_t mp_logger_shutdown(' "public header documents shutdown semantics"
+require_comment_before "comment.header.destroy" include/mp_logger.h 'void mp_logger_destroy(' "public header documents destruction"
+require_comment_before "comment.go.default-config" bindings/go/logger.go 'func DefaultConfig(' "Go wrapper documents default config access"
+require_comment_before "comment.go.load-bootstrap" bindings/go/logger.go 'func LoadBootstrapConfig(' "Go wrapper documents bootstrap loading"
+require_comment_before "comment.go.create" bindings/go/logger.go 'func Create(' "Go wrapper documents logger creation"
+require_comment_before "comment.go.create-bootstrap" bindings/go/logger.go 'func CreateFromBootstrap(' "Go wrapper documents bootstrap-based creation"
+require_comment_before "comment.go.start" bindings/go/logger.go 'func (logger *Logger) Start(' "Go wrapper documents worker startup"
+require_comment_before "comment.go.log" bindings/go/logger.go 'func (logger *Logger) Log(' "Go wrapper documents enqueue semantics"
+require_comment_before "comment.go.flush" bindings/go/logger.go 'func (logger *Logger) Flush(' "Go wrapper documents flush semantics"
+require_comment_before "comment.go.stats" bindings/go/logger.go 'func (logger *Logger) Stats(' "Go wrapper documents stats retrieval"
+require_comment_before "comment.go.shutdown" bindings/go/logger.go 'func (logger *Logger) Shutdown(' "Go wrapper documents shutdown semantics"
+require_comment_before "comment.go.close" bindings/go/logger.go 'func (logger *Logger) Close(' "Go wrapper documents teardown semantics"
+require_comment_before "comment.core.worker" src/mp_logger.c 'static void *mp_logger_worker_main(' "worker implementation documents its queue-drain approach"
+require_comment_before "comment.core.create" src/mp_logger.c 'mp_log_status_t mp_logger_create(' "core creation path documents its allocation approach"
+require_comment_before "comment.core.log" src/mp_logger.c 'mp_log_status_t mp_logger_log(' "core enqueue path documents its non-blocking approach"
+require_comment_before "comment.core.shutdown" src/mp_logger.c 'mp_log_status_t mp_logger_shutdown(' "core shutdown path documents its join approach"
+require_comment_before "comment.bootstrap.load" src/mp_logger_bootstrap.c 'mp_log_status_t mp_logger_bootstrap_load(' "bootstrap parser documents its line-by-line approach"
+require_comment_before "comment.streams.render" src/mp_logger_streams.c 'size_t mp_logger_render_record(' "rendering path documents its shared formatting approach"
+require_comment_before "comment.streams.builtin" src/mp_logger_streams.c 'mp_log_status_t mp_logger_build_builtin_streams(' "builtin sink setup documents its startup approach"
+require_comment_before "comment.tests.find-file" tests/mp_logger_tests.c 'static int find_file_with_prefix(' "test helper documents how it locates run-specific log files"
+require_comment_before "comment.tests.overflow" tests/mp_logger_tests.c 'static void test_buffer_saturation_writes_backup_warning(' "overflow test documents its verification approach"
+require_comment_before "comment.bench.create" tests/mp_logger_benchmarks.c 'static mp_logger_t *benchmark_create_logger(' "benchmark helper documents synthetic logger setup"
+require_comment_before "comment.bench.concurrency" tests/mp_logger_benchmarks.c 'static benchmark_run_result_t benchmark_run_concurrency_case(' "concurrency benchmark documents its measurement approach"
+require_comment_before "comment.bench.threshold" tests/mp_logger_benchmarks.c 'static benchmark_run_result_t benchmark_find_threshold_case(' "threshold benchmark documents its search approach"
+require_comment_before "comment.bench.file-table" tests/mp_logger_benchmarks.c 'static void benchmark_print_file_stream_table(' "benchmark report documents its file-throughput table"
 
 if rg -n '\b(strcpy|strcat|sprintf|vsprintf|gets)\b' include src tests >/dev/null; then
   fail "c.unsafe-functions" "unsafe C string functions are absent" "unsafe function usage found"

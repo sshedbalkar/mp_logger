@@ -13,6 +13,7 @@ extern "C" {
 #define MP_LOGGER_ACTIVE_STREAMS_CAPACITY 128u
 #define MP_LOGGER_HOST_CAPACITY 128u
 
+/* Describes the severity assigned to a record before routing it to sinks. */
 typedef enum {
     MP_LOG_LEVEL_TRACE = 0,
     MP_LOG_LEVEL_DEBUG = 1,
@@ -22,11 +23,13 @@ typedef enum {
     MP_LOG_LEVEL_FATAL = 5
 } mp_log_level_t;
 
+/* Selects how the worker renders each record before it hands the line to sinks. */
 typedef enum {
     MP_LOG_FORMAT_TEXT = 0,
     MP_LOG_FORMAT_JSON = 1
 } mp_log_format_t;
 
+/* Reports the outcome of logger lifecycle, config, and enqueue operations. */
 typedef enum {
     MP_LOG_STATUS_OK = 0,
     MP_LOG_STATUS_QUEUE_FULL = 1,
@@ -41,6 +44,10 @@ typedef enum {
 
 typedef struct mp_logger mp_logger_t;
 
+/*
+ * Carries the structured fields that every stream callback receives for a dequeued record.
+ * The pointers remain valid only for the duration of the callback that receives them.
+ */
 typedef struct {
     uint64_t sequence_id;
     int64_t unix_epoch_millis;
@@ -49,6 +56,11 @@ typedef struct {
     const char *context_text;
 } mp_log_record_t;
 
+/*
+ * Configures queue sizing, rendering, built-in sinks, and output locations for a logger.
+ * Call mp_logger_config_init_defaults() first, then override only the fields your application
+ * needs to customize.
+ */
 typedef struct {
     char service_name[MP_LOGGER_NAME_CAPACITY];
     char environment_name[MP_LOGGER_NAME_CAPACITY];
@@ -73,14 +85,25 @@ typedef struct {
     uint16_t udp_port;
 } mp_logger_config_t;
 
+/*
+ * Writes one rendered record to a custom sink.
+ * The callback runs on the worker thread, so slow or blocking work here directly slows drain
+ * throughput for every active sink.
+ */
 typedef mp_log_status_t (*mp_logger_stream_write_fn)(
     void *stream_context,
     const mp_log_record_t *record,
     const char *formatted_entry,
     size_t formatted_entry_length);
 
+/* Releases stream_context when the logger removes or destroys a registered stream. */
 typedef void (*mp_logger_stream_destroy_fn)(void *stream_context);
 
+/*
+ * Describes a custom sink that accepts records within a level range.
+ * The logger copies this struct on registration and takes ownership of stream_context teardown
+ * only when destroy is non-NULL.
+ */
 typedef struct {
     char stream_name[MP_LOGGER_NAME_CAPACITY];
     mp_log_level_t minimum_level;
@@ -90,6 +113,7 @@ typedef struct {
     mp_logger_stream_destroy_fn destroy;
 } mp_logger_stream_t;
 
+/* Exposes cumulative queue and sink counts so callers can observe pressure and drops. */
 typedef struct {
     uint64_t queued_records;
     uint64_t processed_records;
@@ -98,24 +122,80 @@ typedef struct {
     size_t active_stream_count;
 } mp_logger_stats_t;
 
+/*
+ * Initialize every config field to the library defaults documented in README.md.
+ * Callers typically use this before overriding capacities, stream selection, or metadata.
+ */
 void mp_logger_config_init_defaults(mp_logger_config_t *config);
 
+/*
+ * Load a bootstrap INI file into out_config.
+ * Unknown sections, unknown keys, malformed values, and unreadable files are rejected instead
+ * of being ignored.
+ */
 mp_log_status_t mp_logger_bootstrap_load(const char *config_path, mp_logger_config_t *out_config);
+
+/*
+ * Create a logger instance from a validated config without starting the worker thread.
+ * Use this path when you want to register custom streams before log processing begins.
+ */
 mp_log_status_t mp_logger_create(const mp_logger_config_t *config, mp_logger_t **out_logger);
+
+/*
+ * Load config_path, create the logger, and start the worker thread in one call.
+ * On failure, no partially started logger is returned to the caller.
+ */
 mp_log_status_t mp_logger_create_from_bootstrap(const char *config_path, mp_logger_t **out_logger);
+
+/*
+ * Register a custom stream on an existing logger.
+ * Stream names must be unique, and the callback will run on the worker thread for matching
+ * records once the logger is started.
+ */
 mp_log_status_t mp_logger_add_stream(mp_logger_t *logger, const mp_logger_stream_t *stream);
+
+/*
+ * Start the worker thread that drains queued records to active streams.
+ * Starting an already running logger is a no-op, but starting without any streams is rejected.
+ */
 mp_log_status_t mp_logger_start(mp_logger_t *logger);
+
+/*
+ * Attempt to enqueue one record without blocking on sink I/O.
+ * The call can return BUSY or QUEUE_FULL when contention or saturation prevents admission, so
+ * callers should treat the status as part of normal backpressure handling.
+ */
 mp_log_status_t mp_logger_log(
     mp_logger_t *logger,
     mp_log_level_t level,
     const char *message,
     const char *context_text);
+
+/*
+ * Wait until every record queued before the call has been processed or the timeout expires.
+ * A zero timeout waits without a deadline.
+ */
 mp_log_status_t mp_logger_flush(mp_logger_t *logger, uint32_t timeout_millis);
+
+/*
+ * Snapshot the cumulative queue counters and active stream count into out_stats.
+ * This is the supported way to observe drops and worker progress from outside the logger.
+ */
 mp_log_status_t mp_logger_get_stats(const mp_logger_t *logger, mp_logger_stats_t *out_stats);
+
+/*
+ * Request worker shutdown after queued records have been drained.
+ * The timeout applies to the worker join; once shutdown succeeds the logger can be destroyed.
+ */
 mp_log_status_t mp_logger_shutdown(mp_logger_t *logger, uint32_t timeout_millis);
+
+/* Destroy the logger and any owned stream resources. Safe to call on a stopped or running logger. */
 void mp_logger_destroy(mp_logger_t *logger);
 
+/* Return the stable uppercase name used when rendering a level value. */
 const char *mp_log_level_name(mp_log_level_t level);
+
+/* Return the stable uppercase name for a status code. */
 const char *mp_log_status_name(mp_log_status_t status);
 
 #ifdef __cplusplus
