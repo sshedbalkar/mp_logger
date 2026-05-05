@@ -9,11 +9,18 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <time.h>
+#include <unistd.h>
 
 typedef struct {
     char formatted_entry[2048];
     uint64_t write_count;
 } capture_stream_t;
+
+typedef struct {
+    uint32_t delay_millis;
+    uint64_t write_count;
+} delayed_stream_t;
 
 static mp_log_status_t capture_stream_write(
     void *stream_context,
@@ -36,6 +43,30 @@ static mp_log_status_t capture_stream_write(
 }
 
 static void capture_stream_destroy(void *stream_context) {
+    free(stream_context);
+}
+
+static mp_log_status_t delayed_stream_write(
+    void *stream_context,
+    const mp_log_record_t *record,
+    const char *formatted_entry,
+    size_t formatted_entry_length) {
+    delayed_stream_t *stream = (delayed_stream_t *)stream_context;
+    struct timespec wait_time;
+    (void)record;
+    (void)formatted_entry;
+    (void)formatted_entry_length;
+    if (stream == NULL) {
+        return MP_LOG_STATUS_INVALID_ARGUMENT;
+    }
+    wait_time.tv_sec = (time_t)(stream->delay_millis / 1000u);
+    wait_time.tv_nsec = (long)((stream->delay_millis % 1000u) * 1000000u);
+    (void)nanosleep(&wait_time, NULL);
+    stream->write_count++;
+    return MP_LOG_STATUS_OK;
+}
+
+static void delayed_stream_destroy(void *stream_context) {
     free(stream_context);
 }
 
@@ -80,6 +111,24 @@ static int find_file_with_prefix(
     }
     (void)closedir(dir);
     return 0;
+}
+
+static void remove_files_with_prefix(const char *directory, const char *prefix) {
+    DIR *dir = opendir(directory);
+    struct dirent *entry = NULL;
+    if (dir == NULL) {
+        return;
+    }
+    while ((entry = readdir(dir)) != NULL) {
+        char path[512];
+        if (strncmp(entry->d_name, prefix, strlen(prefix)) != 0 ||
+            strstr(entry->d_name, ".log") == NULL) {
+            continue;
+        }
+        (void)snprintf(path, sizeof(path), "%s/%s", directory, entry->d_name);
+        (void)unlink(path);
+    }
+    (void)closedir(dir);
 }
 
 static void test_queue_full_before_start(void) {
@@ -187,6 +236,7 @@ static void test_file_stream_writes_new_run_file(void) {
     char log_contents[4096];
     ensure_directory(".tmp");
     ensure_directory(".tmp/logger-output");
+    remove_files_with_prefix(".tmp/logger-output", "unit-file");
 
     mp_logger_config_init_defaults(&config);
     config.buffer_capacity = 4u;
@@ -214,10 +264,115 @@ static void test_file_stream_writes_new_run_file(void) {
     assert(strstr(log_contents, "backup path") != NULL);
 }
 
+static void test_buffer_saturation_writes_backup_warning(void) {
+    const char *log_directory = ".tmp/logger-overflow";
+    mp_logger_config_t config;
+    mp_logger_t *logger = NULL;
+    mp_logger_stream_t stream;
+    delayed_stream_t *delayed_stream = NULL;
+    mp_logger_stats_t stats;
+    char backup_path[256];
+    char backup_contents[4096];
+    size_t index = 0;
+    uint64_t full_failures = 0u;
+
+    ensure_directory(".tmp");
+    ensure_directory(log_directory);
+    remove_files_with_prefix(log_directory, "overflow-backup");
+
+    mp_logger_config_init_defaults(&config);
+    config.buffer_capacity = 2u;
+    config.message_capacity = 64u;
+    config.context_capacity = 64u;
+    (void)snprintf(config.active_streams, sizeof(config.active_streams), "%s", "");
+    (void)snprintf(config.log_directory, sizeof(config.log_directory), "%s", log_directory);
+    (void)snprintf(config.file_name_prefix, sizeof(config.file_name_prefix), "%s", "overflow-primary");
+    (void)snprintf(
+        config.backup_file_name_prefix,
+        sizeof(config.backup_file_name_prefix),
+        "%s",
+        "overflow-backup");
+
+    assert(mp_logger_create(&config, &logger) == MP_LOG_STATUS_OK);
+    delayed_stream = (delayed_stream_t *)calloc(1u, sizeof(*delayed_stream));
+    assert(delayed_stream != NULL);
+    delayed_stream->delay_millis = 100u;
+    memset(&stream, 0, sizeof(stream));
+    (void)snprintf(stream.stream_name, sizeof(stream.stream_name), "%s", "delayed");
+    stream.minimum_level = MP_LOG_LEVEL_TRACE;
+    stream.maximum_level = MP_LOG_LEVEL_FATAL;
+    stream.stream_context = delayed_stream;
+    stream.write = delayed_stream_write;
+    stream.destroy = delayed_stream_destroy;
+    assert(mp_logger_add_stream(logger, &stream) == MP_LOG_STATUS_OK);
+    assert(mp_logger_start(logger) == MP_LOG_STATUS_OK);
+
+    for (index = 0; index < 8u; index++) {
+        mp_log_status_t status = mp_logger_log(logger, MP_LOG_LEVEL_INFO, "overflow", "pressure");
+        if (status == MP_LOG_STATUS_QUEUE_FULL) {
+            full_failures++;
+        }
+    }
+
+    assert(mp_logger_flush(logger, 5000u) == MP_LOG_STATUS_OK);
+    assert(mp_logger_shutdown(logger, 5000u) == MP_LOG_STATUS_OK);
+    assert(mp_logger_get_stats(logger, &stats) == MP_LOG_STATUS_OK);
+    assert(full_failures > 0u);
+    assert(stats.dropped_full == full_failures);
+    mp_logger_destroy(logger);
+
+    assert(find_file_with_prefix(log_directory, "overflow-backup", backup_path, sizeof(backup_path)));
+    read_text_file(backup_path, backup_contents, sizeof(backup_contents));
+    assert(strstr(backup_contents, "buffer saturation dropped records") != NULL);
+}
+
+static void test_stream_limit_is_enforced(void) {
+    mp_logger_config_t config;
+    mp_logger_t *logger = NULL;
+    size_t index = 0u;
+
+    mp_logger_config_init_defaults(&config);
+    (void)snprintf(config.active_streams, sizeof(config.active_streams), "%s", "");
+    assert(mp_logger_create(&config, &logger) == MP_LOG_STATUS_OK);
+
+    for (index = 0u; index < 8u; index++) {
+        mp_logger_stream_t stream;
+        capture_stream_t *capture = (capture_stream_t *)calloc(1u, sizeof(*capture));
+        assert(capture != NULL);
+        memset(&stream, 0, sizeof(stream));
+        (void)snprintf(stream.stream_name, sizeof(stream.stream_name), "capture-%zu", index + 1u);
+        stream.minimum_level = MP_LOG_LEVEL_TRACE;
+        stream.maximum_level = MP_LOG_LEVEL_FATAL;
+        stream.stream_context = capture;
+        stream.write = capture_stream_write;
+        stream.destroy = capture_stream_destroy;
+        assert(mp_logger_add_stream(logger, &stream) == MP_LOG_STATUS_OK);
+    }
+
+    {
+        mp_logger_stream_t overflow_stream;
+        capture_stream_t *capture = (capture_stream_t *)calloc(1u, sizeof(*capture));
+        assert(capture != NULL);
+        memset(&overflow_stream, 0, sizeof(overflow_stream));
+        (void)snprintf(overflow_stream.stream_name, sizeof(overflow_stream.stream_name), "%s", "capture-overflow");
+        overflow_stream.minimum_level = MP_LOG_LEVEL_TRACE;
+        overflow_stream.maximum_level = MP_LOG_LEVEL_FATAL;
+        overflow_stream.stream_context = capture;
+        overflow_stream.write = capture_stream_write;
+        overflow_stream.destroy = capture_stream_destroy;
+        assert(mp_logger_add_stream(logger, &overflow_stream) == MP_LOG_STATUS_LIMIT_EXCEEDED);
+        capture_stream_destroy(capture);
+    }
+
+    mp_logger_destroy(logger);
+}
+
 int main(void) {
     test_queue_full_before_start();
     test_custom_stream_receives_formatted_message();
     test_bootstrap_load_applies_overrides();
     test_file_stream_writes_new_run_file();
+    test_buffer_saturation_writes_backup_warning();
+    test_stream_limit_is_enforced();
     return 0;
 }

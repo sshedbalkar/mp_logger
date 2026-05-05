@@ -30,6 +30,7 @@ scripts/                 build, test, deploy, and validator entrypoints
 ```bash
 ./scripts/build.sh
 ./scripts/test.sh
+./scripts/benchmark.sh
 ./scripts/deploy.sh
 ./scripts/validate-static.sh
 ./scripts/validate-llm.sh
@@ -265,3 +266,67 @@ static void print_logger_stats(mp_logger_t *logger) {
         stats.active_stream_count);
 }
 ```
+
+## Benchmark Results
+
+Run `./scripts/benchmark.sh` to rebuild the benchmark target in `Release` mode and refresh `.tmp/reports/benchmark-results.md`.
+
+The results below were captured on `2026-05-05 17:21:26Z` on `Linux 7.0.2-2-cachyos x86_64` with an `AMD Ryzen AI 9 365 w/ Radeon 880M` and `20` online CPUs.
+
+### File stream throughput
+
+This benchmark uses the built-in file sink with the default JSON formatter. The typical payload is an `86` byte message plus a `53` byte context string. Each run uses a single producer thread for `1.5` seconds and then flushes the queue.
+
+| Active file streams | Attempted | Processed to file | Processed logs/s | File write ops/s | Busy drops | Full drops |
+|--------------------:|----------:|------------------:|-----------------:|-----------------:|-----------:|-----------:|
+| `1` | 42,757,855 | 609,655 | 406,437 | 406,437 | 662,713 | 41,485,487 |
+| `2` | 40,344,347 | 444,989 | 296,659 | 593,319 | 532,694 | 39,366,664 |
+| `4` | 44,330,867 | 317,835 | 211,890 | 847,560 | 454,502 | 43,558,530 |
+| `8` | 41,016,013 | 194,518 | 129,679 | 1,037,429 | 218,551 | 40,602,944 |
+
+The logger supports up to `8` active streams. Those writes are not parallelized across workers: one drain thread fans each record out to each stream sequentially, so higher stream counts reduce record throughput while increasing total sink write operations per second.
+
+### Buffer footprint by configuration
+
+These figures are derived from the current implementation layout: `buffer_capacity * (sizeof(slot) + message_capacity + context_capacity)` for queue storage, plus worker scratch buffers.
+
+| Profile | Slots | Message cap | Context cap | Queue reserved bytes | Worker scratch bytes | Total reserved bytes |
+|:--------|------:|------------:|------------:|---------------------:|---------------------:|---------------------:|
+| `small` | 64 | 64 | 128 | 15,872 | 768 | 16,640 |
+| `default` | 1024 | 512 | 1024 | 1,630,208 | 3,456 | 1,633,664 |
+| `deep` | 4096 | 512 | 1024 | 6,520,832 | 3,456 | 6,524,288 |
+
+### When the buffer becomes full
+
+Before the worker starts, the queue fills deterministically on the first call after `buffer_capacity`.
+
+| Profile | Accepted before first failure | Failure status | Queue becomes full on call |
+|:--------|------------------------------:|:---------------|---------------------------:|
+| `small` | 64 | `QUEUE_FULL` | 65 |
+| `default` | 1024 | `QUEUE_FULL` | 1025 |
+| `deep` | 4096 | `QUEUE_FULL` | 4097 |
+
+With the worker running behind a synthetic `500us` sink delay and a `128`-slot buffer, the benchmark found:
+
+| Buffer slots | Highest rate without `QUEUE_FULL` | First rate with `QUEUE_FULL` | Busy drops at first full rate | Full drops at first full rate |
+|-------------:|----------------------------------:|------------------------------:|------------------------------:|------------------------------:|
+| 128 | 1,868 logs/s | 1,869 logs/s | 2 | 21 |
+
+### Concurrent producer throughput
+
+This benchmark uses a fast custom sink and drives the logger for `1.5` seconds per run. It measures how many log calls were accepted while the logger was saturated, plus which overflow mode dominated.
+
+| Producer threads | Attempted | Accepted | Accepted logs/s | Busy drops | Full drops |
+|-----------------:|----------:|---------:|----------------:|-----------:|-----------:|
+| 1 | 31,680,874 | 915,485 | 610,323 | 432,253 | 30,333,136 |
+| 2 | 20,773,510 | 604,725 | 403,150 | 1,910,912 | 18,257,873 |
+| 4 | 20,639,962 | 520,350 | 346,900 | 7,317,186 | 12,802,426 |
+| 8 | 25,416,434 | 320,696 | 213,797 | 16,553,058 | 8,542,680 |
+| 16 | 39,522,416 | 180,428 | 120,285 | 34,009,000 | 5,332,988 |
+
+### Overflow mechanisms under test
+
+- `mp_logger_log()` returns `MP_LOG_STATUS_BUSY` when `pthread_mutex_trylock()` loses queue mutex contention.
+- `mp_logger_log()` returns `MP_LOG_STATUS_QUEUE_FULL` when `queue_count` reaches `buffer_capacity`.
+- `mp_logger_get_stats()` exposes cumulative `dropped_busy` and `dropped_full` counters.
+- The worker mirrors drop counter growth to the backup log file with warning lines such as `log call contention dropped records` and `buffer saturation dropped records`.

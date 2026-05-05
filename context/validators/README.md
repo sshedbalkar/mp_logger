@@ -9,3 +9,8 @@
 
 - command: `./scripts/validate-llm.sh`
 - proves: semantic review prompt exists for drop policy, sink isolation, log hygiene, and extension safety.
+
+## Benchmarks
+
+- command: `./scripts/benchmark.sh`
+- proves: file-stream throughput, multi-stream fanout cost, queue memory footprint, deterministic fill point, paced overflow threshold, and concurrent producer behavior on the current host.

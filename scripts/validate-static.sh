@@ -65,6 +65,7 @@ for path in \
   src/mp_logger_bootstrap.c \
   src/mp_logger_streams.c \
   tests/mp_logger_tests.c \
+  tests/mp_logger_benchmarks.c \
   configs/logger.bootstrap.ini \
   docs/standards.md \
   docs/architecture.md \
@@ -72,12 +73,13 @@ for path in \
   context/repo-map.md \
   context/doc-cards.md \
   context/routing-map.md \
-  context/validators/README.md
+  context/validators/README.md \
+  scripts/benchmark.sh
 do
   require_file "file.${path}" "$path" "required file exists"
 done
 
-for script in scripts/build.sh scripts/test.sh scripts/deploy.sh scripts/validate-static.sh scripts/validate-llm.sh; do
+for script in scripts/build.sh scripts/test.sh scripts/benchmark.sh scripts/deploy.sh scripts/validate-static.sh scripts/validate-llm.sh; do
   if [ -x "$script" ]; then
     pass "script.exec.${script}" "script is executable" "$script"
   else
@@ -87,10 +89,14 @@ done
 
 require_contains "cmake.install" CMakeLists.txt "install(TARGETS mp_logger" "CMake installs the library target"
 require_contains "cmake.ctest" CMakeLists.txt "add_test(NAME mp_logger" "CMake registers a CTest target"
+require_contains "cmake.bench" CMakeLists.txt "add_executable(mp_logger_benchmarks" "CMake builds the benchmark target"
 require_contains "agents.read-order" AGENTS.md "Read order:" "AGENTS defines bootstrap read order"
 require_contains "agents.commit-format" AGENTS.md "MPSTD12_-_PR_Authoring_and_Review_Standards.md#2-pr-title" "AGENTS routes commit format to parent source"
 require_contains "api.log" include/mp_logger.h "mp_logger_log(" "public header exposes log API"
 require_contains "api.bootstrap" include/mp_logger.h "mp_logger_bootstrap_load(" "public header exposes bootstrap API"
+require_contains "bench.script" README.md "./scripts/benchmark.sh" "README documents the benchmark runner"
+require_contains "bench.results" README.md "## Benchmark Results" "README records benchmark results"
+require_contains "bench.file" README.md "### File stream throughput" "README records file stream benchmark results"
 require_contains "nonblocking.trylock" src/mp_logger.c "pthread_mutex_trylock" "producer path uses non-blocking queue admission"
 require_contains "backup.logger" src/mp_logger_streams.c "mp_logger_backup_write" "backup logger path exists"
 require_contains "config.active-streams" configs/logger.bootstrap.ini "active_streams =" "bootstrap config declares active streams"

@@ -36,6 +36,13 @@ if(MP_LOGGER_BUILD_TESTS)
   add_test(NAME mp_logger COMMAND mp_logger_tests)
 endif()
 
+option(MP_LOGGER_BUILD_BENCHMARKS "Build mp_logger benchmarks" ON)
+if(MP_LOGGER_BUILD_BENCHMARKS)
+  add_executable(mp_logger_benchmarks tests/mp_logger_benchmarks.c)
+  target_include_directories(mp_logger_benchmarks PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  target_link_libraries(mp_logger_benchmarks PRIVATE mp_logger)
+endif()
+
 configure_package_config_file(
   cmake/mp_loggerConfig.cmake.in
   ${CMAKE_CURRENT_BINARY_DIR}/mp_loggerConfig.cmake
