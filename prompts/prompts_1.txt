@@ -1,0 +1,3 @@
+Add various usage examples in the README file.
+
+List all available configuration options for the library in the README file.
