@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+report_dir=".tmp/reports"
+report="$report_dir/static-validation.md"
+detail="$report_dir/static-validation.tsv"
+threshold=85
+passed=0
+total=0
+
+mkdir -p "$report_dir"
+: > "$detail"
+
+record() {
+  local status="$1"
+  local check_id="$2"
+  local description="$3"
+  local evidence="$4"
+  total=$((total + 1))
+  if [ "$status" = "PASS" ]; then
+    passed=$((passed + 1))
+  fi
+  printf '%s\t%s\t%s\t%s\n' "$status" "$check_id" "$description" "$evidence" >> "$detail"
+}
+
+pass() {
+  record "PASS" "$1" "$2" "$3"
+}
+
+fail() {
+  record "FAIL" "$1" "$2" "$3"
+}
+
+require_file() {
+  local check_id="$1"
+  local path="$2"
+  local description="$3"
+  if [ -f "$path" ]; then
+    pass "$check_id" "$description" "$path"
+  else
+    fail "$check_id" "$description" "missing: $path"
+  fi
+}
+
+require_contains() {
+  local check_id="$1"
+  local path="$2"
+  local needle="$3"
+  local description="$4"
+  if rg -q --fixed-strings -- "$needle" "$path"; then
+    pass "$check_id" "$description" "$path contains: $needle"
+  else
+    fail "$check_id" "$description" "$path missing: $needle"
+  fi
+}
+
+for path in \
+  AGENTS.md \
+  README.md \
+  CMakeLists.txt \
+  include/mp_logger.h \
+  src/mp_logger.c \
+  src/mp_logger_bootstrap.c \
+  src/mp_logger_streams.c \
+  tests/mp_logger_tests.c \
+  configs/logger.bootstrap.ini \
+  docs/standards.md \
+  docs/architecture.md \
+  context/README.md \
+  context/repo-map.md \
+  context/doc-cards.md \
+  context/routing-map.md \
+  context/validators/README.md
+do
+  require_file "file.${path}" "$path" "required file exists"
+done
+
+for script in scripts/build.sh scripts/test.sh scripts/deploy.sh scripts/validate-static.sh scripts/validate-llm.sh; do
+  if [ -x "$script" ]; then
+    pass "script.exec.${script}" "script is executable" "$script"
+  else
+    fail "script.exec.${script}" "script is executable" "$script is not executable"
+  fi
+done
+
+require_contains "cmake.install" CMakeLists.txt "install(TARGETS mp_logger" "CMake installs the library target"
+require_contains "cmake.ctest" CMakeLists.txt "add_test(NAME mp_logger" "CMake registers a CTest target"
+require_contains "agents.read-order" AGENTS.md "Read order:" "AGENTS defines bootstrap read order"
+require_contains "agents.commit-format" AGENTS.md "MPSTD12_-_PR_Authoring_and_Review_Standards.md#2-pr-title" "AGENTS routes commit format to parent source"
+require_contains "api.log" include/mp_logger.h "mp_logger_log(" "public header exposes log API"
+require_contains "api.bootstrap" include/mp_logger.h "mp_logger_bootstrap_load(" "public header exposes bootstrap API"
+require_contains "nonblocking.trylock" src/mp_logger.c "pthread_mutex_trylock" "producer path uses non-blocking queue admission"
+require_contains "backup.logger" src/mp_logger_streams.c "mp_logger_backup_write" "backup logger path exists"
+require_contains "config.active-streams" configs/logger.bootstrap.ini "active_streams =" "bootstrap config declares active streams"
+require_contains "docs.non-blocking" docs/standards.md "non-blocking" "standards doc records non-blocking rule"
+require_contains "docs.pluggable" docs/architecture.md "pluggable" "architecture doc records stream extensibility"
+
+if rg -n '\b(strcpy|strcat|sprintf|vsprintf|gets)\b' include src tests >/dev/null; then
+  fail "c.unsafe-functions" "unsafe C string functions are absent" "unsafe function usage found"
+else
+  pass "c.unsafe-functions" "unsafe C string functions are absent" "include src tests"
+fi
+
+score="$(awk -v passed="$passed" -v total="$total" 'BEGIN { if (total == 0) print "0.0"; else printf "%.1f", (passed / total) * 100 }')"
+status="PASS"
+if ! awk -v score="$score" -v minimum="$threshold" 'BEGIN { exit (score + 0 >= minimum + 0) ? 0 : 1 }'; then
+  status="FAIL"
+fi
+
+{
+  printf '# Static Validation Report\n\n'
+  printf '| Field | Value |\n'
+  printf '|:------|:------|\n'
+  printf '| Threshold | %s%% |\n' "$threshold"
+  printf '| Passed checks | %s |\n' "$passed"
+  printf '| Total checks | %s |\n' "$total"
+  printf '| Score | %s%% |\n' "$score"
+  printf '| Status | %s |\n\n' "$status"
+  printf 'Detail: `%s`\n' "$detail"
+} > "$report"
+
+printf 'static validation score %s%% (%s/%s)\n' "$score" "$passed" "$total"
+if [ "$status" != "PASS" ]; then
+  exit 1
+fi
