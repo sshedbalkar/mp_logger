@@ -7,6 +7,7 @@
 - `include/mp_logger.h`: public contract.
 - `docs/standards.md`: extracted engineering rules for this logger.
 - `docs/architecture.md`: durable architecture decision.
+- `docs/commit-messages.md`: local commit subject and body rules.
 
 ## Implementation Roots
 

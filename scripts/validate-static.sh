@@ -69,6 +69,7 @@ for path in \
   configs/logger.bootstrap.ini \
   docs/standards.md \
   docs/architecture.md \
+  docs/commit-messages.md \
   context/README.md \
   context/repo-map.md \
   context/doc-cards.md \
@@ -91,7 +92,8 @@ require_contains "cmake.install" CMakeLists.txt "install(TARGETS mp_logger" "CMa
 require_contains "cmake.ctest" CMakeLists.txt "add_test(NAME mp_logger" "CMake registers a CTest target"
 require_contains "cmake.bench" CMakeLists.txt "add_executable(mp_logger_benchmarks" "CMake builds the benchmark target"
 require_contains "agents.read-order" AGENTS.md "Read order:" "AGENTS defines bootstrap read order"
-require_contains "agents.commit-format" AGENTS.md "MPSTD12_-_PR_Authoring_and_Review_Standards.md#2-pr-title" "AGENTS routes commit format to parent source"
+require_contains "agents.commit-format" AGENTS.md "docs/commit-messages.md" "AGENTS routes commit format to local source"
+require_contains "docs.commit-body" docs/commit-messages.md "The body is mandatory for every commit in this repository." "local commit standard requires commit bodies"
 require_contains "api.log" include/mp_logger.h "mp_logger_log(" "public header exposes log API"
 require_contains "api.bootstrap" include/mp_logger.h "mp_logger_bootstrap_load(" "public header exposes bootstrap API"
 require_contains "bench.script" README.md "./scripts/benchmark.sh" "README documents the benchmark runner"

@@ -18,5 +18,5 @@
 - Truth order: source truth > context > chat history.
 - `AGENTS.md` and `context/` are routers only; point to owning docs instead of repeating rule bodies.
 - If durable navigation or validation facts change, update affected `context/` files in the same change.
-- Commit messages must follow parent source `MPSTD12_-_PR_Authoring_and_Review_Standards.md#2-pr-title`.
+- Commit messages must follow `docs/commit-messages.md`.
 - Validate doc, context, and script changes with `./scripts/validate-static.sh`.
