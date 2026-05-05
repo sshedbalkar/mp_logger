@@ -2,6 +2,8 @@
 
 All commits in this repository must use a subject and a body. Do not create one-line commits.
 
+The body is mandatory for every commit in this repository.
+
 ## Required Format
 
 Every commit message must follow this shape:

@@ -10,12 +10,14 @@ Standalone C logging library for low-latency services and tools.
 - default streams: `stdout`, `stderr`, and a per-run local file;
 - pluggable stream interface for custom sinks;
 - built-in UDP stream support through bootstrap config;
+- bundled cgo-based Go wrapper for logger lifecycle, config, and stats;
 - separate backup file logger for logger-internal warnings and errors;
 - CMake build, CTest coverage, installable library packaging, and static plus LLM validation scripts.
 
 ## Layout
 
 ```text
+bindings/go/             bundled Go wrapper and tests
 include/                 public header
 src/                     implementation
 tests/                   C unit tests
@@ -107,7 +109,7 @@ Custom streams receive both the structured record and the already-rendered log l
 
 ## Usage Examples
 
-Go callers should usually wrap this library behind a small cgo adapter so the rest of the service does not depend on C types or manual string lifetimes directly.
+The bundled Go wrapper lives in [bindings/go](bindings/go) and compiles the vendored C sources through cgo. It covers bootstrap loading, config-based creation, lifecycle control, `Log()`, and `Stats()`. Custom stream callbacks remain C-only.
 
 ### Start from a bootstrap config file
 
@@ -265,54 +267,36 @@ static void print_logger_stats(mp_logger_t *logger) {
 }
 ```
 
-### Call the logger from Go with cgo
-
-Adjust the `#cgo` include and library paths for your build layout. These examples keep all C string allocation and logger lifecycle handling inside a narrow Go adapter.
+### Call the logger from Go
 
 #### Start from a bootstrap config file
 
 ```go
 package main
 
-/*
-#cgo CFLAGS: -I${SRCDIR}/include
-#cgo LDFLAGS: -L${SRCDIR} -lmp_logger -lpthread
-#include "mp_logger.h"
-#include <stdlib.h>
-*/
-import "C"
-
 import (
-	"fmt"
-	"unsafe"
+	"log"
+	"time"
+
+	mplogger "mp_logger/bindings/go"
 )
 
-func statusText(status C.mp_log_status_t) string {
-	return C.GoString(C.mp_log_status_name(status))
-}
-
 func main() {
-	configPath := C.CString("configs/logger.bootstrap.ini")
-	defer C.free(unsafe.Pointer(configPath))
-
-	var logger *C.mp_logger_t
-	status := C.mp_logger_create_from_bootstrap(configPath, &logger)
-	if status != C.MP_LOG_STATUS_OK {
-		panic(fmt.Sprintf("create_from_bootstrap failed: %s", statusText(status)))
+	logger, err := mplogger.CreateFromBootstrap("configs/logger.bootstrap.ini")
+	if err != nil {
+		log.Fatal(err)
 	}
-	defer C.mp_logger_destroy(logger)
+	defer logger.Close()
 
-	message := C.CString("service started")
-	context := C.CString("port=8080")
-	defer C.free(unsafe.Pointer(message))
-	defer C.free(unsafe.Pointer(context))
-
-	status = C.mp_logger_log(logger, C.MP_LOG_LEVEL_INFO, message, context)
-	if status != C.MP_LOG_STATUS_OK {
-		panic(fmt.Sprintf("log failed: %s", statusText(status)))
+	if err := logger.Log(mplogger.Info, "service started", "port=8080"); err != nil {
+		log.Fatal(err)
 	}
-	_ = C.mp_logger_flush(logger, 2000)
-	_ = C.mp_logger_shutdown(logger, 2000)
+	if err := logger.Flush(2 * time.Second); err != nil {
+		log.Fatal(err)
+	}
+	if err := logger.Shutdown(2 * time.Second); err != nil {
+		log.Fatal(err)
+	}
 }
 ```
 
@@ -321,64 +305,41 @@ func main() {
 ```go
 package main
 
-/*
-#cgo CFLAGS: -I${SRCDIR}/include
-#cgo LDFLAGS: -L${SRCDIR} -lmp_logger -lpthread
-#include "mp_logger.h"
-#include <string.h>
-
-static void init_payments_config(mp_logger_config_t *config) {
-    mp_logger_config_init_defaults(config);
-    config->buffer_capacity = 1024u;
-    config->message_capacity = 256u;
-    config->context_capacity = 256u;
-    config->format = MP_LOG_FORMAT_JSON;
-    config->pretty_output = 0;
-    strncpy(config->service_name, "payments", sizeof(config->service_name) - 1u);
-    strncpy(config->environment_name, "prod", sizeof(config->environment_name) - 1u);
-    strncpy(config->active_streams, "stdout,file", sizeof(config->active_streams) - 1u);
-    strncpy(config->log_directory, "./logs", sizeof(config->log_directory) - 1u);
-    strncpy(config->file_name_prefix, "payments", sizeof(config->file_name_prefix) - 1u);
-    strncpy(config->backup_file_name_prefix, "payments-internal", sizeof(config->backup_file_name_prefix) - 1u);
-}
-*/
-import "C"
-
 import (
-	"fmt"
-	"unsafe"
+	"log"
+	"time"
+
+	mplogger "mp_logger/bindings/go"
 )
 
-func statusText(status C.mp_log_status_t) string {
-	return C.GoString(C.mp_log_status_name(status))
-}
-
 func main() {
-	var config C.mp_logger_config_t
-	var logger *C.mp_logger_t
+	config := mplogger.DefaultConfig()
+	config.BufferCapacity = 1024
+	config.MessageCapacity = 256
+	config.ContextCapacity = 256
+	config.Format = mplogger.JSON
+	config.ServiceName = "payments"
+	config.EnvironmentName = "prod"
+	config.ActiveStreams = "stdout,file"
+	config.LogDirectory = "./logs"
+	config.FileNamePrefix = "payments"
+	config.BackupFileNamePrefix = "payments-internal"
 
-	C.init_payments_config(&config)
-
-	status := C.mp_logger_create(&config, &logger)
-	if status != C.MP_LOG_STATUS_OK {
-		panic(fmt.Sprintf("create failed: %s", statusText(status)))
+	logger, err := mplogger.Create(config)
+	if err != nil {
+		log.Fatal(err)
 	}
-	defer C.mp_logger_destroy(logger)
+	defer logger.Close()
 
-	if status = C.mp_logger_start(logger); status != C.MP_LOG_STATUS_OK {
-		panic(fmt.Sprintf("start failed: %s", statusText(status)))
+	if err := logger.Start(); err != nil {
+		log.Fatal(err)
 	}
-
-	message := C.CString("retrying downstream call")
-	context := C.CString("attempt=2")
-	defer C.free(unsafe.Pointer(message))
-	defer C.free(unsafe.Pointer(context))
-
-	status = C.mp_logger_log(logger, C.MP_LOG_LEVEL_WARNING, message, context)
-	if status != C.MP_LOG_STATUS_OK {
-		panic(fmt.Sprintf("log failed: %s", statusText(status)))
+	if err := logger.Log(mplogger.Warning, "retrying downstream call", "attempt=2"); err != nil {
+		log.Fatal(err)
 	}
-	_ = C.mp_logger_shutdown(logger, 2000)
+	if err := logger.Shutdown(2 * time.Second); err != nil {
+		log.Fatal(err)
+	}
 }
 ```
 

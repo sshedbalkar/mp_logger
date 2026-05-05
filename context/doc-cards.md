@@ -3,6 +3,7 @@
 ## Entries
 
 - `readme`: `README.md` -- module overview and commands
+- `binding.go`: `bindings/go/README.md` -- bundled cgo wrapper usage and limits
 - `doc.standards`: `docs/standards.md` -- extracted rules for logger work
 - `doc.architecture`: `docs/architecture.md` -- runtime and extension design
 - `doc.commit-messages`: `docs/commit-messages.md` -- local commit subject and mandatory body rules

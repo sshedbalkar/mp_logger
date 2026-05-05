@@ -2,7 +2,7 @@
 
 ## route.logger-core
 
-- use when: queueing, threading, sink behavior, public API, or config parsing changes
+- use when: queueing, threading, sink behavior, public API, runtime wrapper, or config parsing changes
 - read first: `include/mp_logger.h`, `docs/standards.md`, `docs/architecture.md`
 
 ## route.docs

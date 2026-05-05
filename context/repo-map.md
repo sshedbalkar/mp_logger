@@ -11,6 +11,9 @@
 
 ## Implementation Roots
 
+- `bindings/go/logger.go`: cgo wrapper that exposes logger creation, lifecycle, logging, and stats to Go callers.
+- `bindings/go/logger_test.go`: Go coverage for defaults, bootstrap loading, lifecycle, and file-backed output.
+- `bindings/go/README.md`: Go binding usage, scope, and cgo requirements.
 - `src/mp_logger.c`: lifecycle, queueing, worker, and shutdown.
 - `src/mp_logger_bootstrap.c`: bootstrap config loading.
 - `src/mp_logger_streams.c`: rendering, file backup logger, and built-in sinks.

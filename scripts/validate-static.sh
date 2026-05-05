@@ -60,6 +60,14 @@ for path in \
   AGENTS.md \
   README.md \
   CMakeLists.txt \
+  bindings/go/README.md \
+  bindings/go/go.mod \
+  bindings/go/doc.go \
+  bindings/go/logger.go \
+  bindings/go/logger_test.go \
+  bindings/go/c_mp_logger.c \
+  bindings/go/c_mp_logger_bootstrap.c \
+  bindings/go/c_mp_logger_streams.c \
   include/mp_logger.h \
   src/mp_logger.c \
   src/mp_logger_bootstrap.c \
@@ -91,6 +99,7 @@ done
 require_contains "cmake.install" CMakeLists.txt "install(TARGETS mp_logger" "CMake installs the library target"
 require_contains "cmake.ctest" CMakeLists.txt "add_test(NAME mp_logger" "CMake registers a CTest target"
 require_contains "cmake.bench" CMakeLists.txt "add_executable(mp_logger_benchmarks" "CMake builds the benchmark target"
+require_contains "test.go-wrapper" scripts/test.sh "go test ./..." "test script runs Go wrapper tests"
 require_contains "agents.read-order" AGENTS.md "Read order:" "AGENTS defines bootstrap read order"
 require_contains "agents.commit-format" AGENTS.md "docs/commit-messages.md" "AGENTS routes commit format to local source"
 require_contains "docs.commit-body" docs/commit-messages.md "The body is mandatory for every commit in this repository." "local commit standard requires commit bodies"
@@ -99,6 +108,7 @@ require_contains "api.bootstrap" include/mp_logger.h "mp_logger_bootstrap_load("
 require_contains "bench.script" README.md "./scripts/benchmark.sh" "README documents the benchmark runner"
 require_contains "bench.results" README.md "## Benchmark Results" "README records benchmark results"
 require_contains "bench.file" README.md "### File stream throughput" "README records file stream benchmark results"
+require_contains "readme.go-wrapper" README.md "bindings/go" "README documents the bundled Go wrapper"
 require_contains "nonblocking.trylock" src/mp_logger.c "pthread_mutex_trylock" "producer path uses non-blocking queue admission"
 require_contains "backup.logger" src/mp_logger_streams.c "mp_logger_backup_write" "backup logger path exists"
 require_contains "config.active-streams" configs/logger.bootstrap.ini "active_streams =" "bootstrap config declares active streams"
