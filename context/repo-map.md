@@ -26,5 +26,8 @@
 - `scripts/test.sh`
 - `scripts/benchmark.sh`
 - `scripts/deploy.sh`
+- `scripts/install-git-hooks.sh`
+- `scripts/validate-commit-message.sh`
 - `scripts/validate-static.sh`
 - `scripts/validate-llm.sh`
+- `.githooks/commit-msg`

@@ -19,4 +19,5 @@
 - `AGENTS.md` and `context/` are routers only; point to owning docs instead of repeating rule bodies.
 - If durable navigation or validation facts change, update affected `context/` files in the same change.
 - Commit messages must follow `docs/commit-messages.md`.
+- Never create a commit in this repository without a subject and body that pass `./scripts/validate-commit-message.sh`.
 - Validate doc, context, and script changes with `./scripts/validate-static.sh`.

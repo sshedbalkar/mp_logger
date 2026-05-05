@@ -58,6 +58,7 @@ require_contains() {
 
 for path in \
   AGENTS.md \
+  .githooks/commit-msg \
   README.md \
   CMakeLists.txt \
   bindings/go/README.md \
@@ -83,12 +84,14 @@ for path in \
   context/doc-cards.md \
   context/routing-map.md \
   context/validators/README.md \
-  scripts/benchmark.sh
+  scripts/benchmark.sh \
+  scripts/install-git-hooks.sh \
+  scripts/validate-commit-message.sh
 do
   require_file "file.${path}" "$path" "required file exists"
 done
 
-for script in scripts/build.sh scripts/test.sh scripts/benchmark.sh scripts/deploy.sh scripts/validate-static.sh scripts/validate-llm.sh; do
+for script in scripts/build.sh scripts/test.sh scripts/benchmark.sh scripts/deploy.sh scripts/install-git-hooks.sh scripts/validate-commit-message.sh scripts/validate-static.sh scripts/validate-llm.sh .githooks/commit-msg; do
   if [ -x "$script" ]; then
     pass "script.exec.${script}" "script is executable" "$script"
   else
@@ -102,7 +105,10 @@ require_contains "cmake.bench" CMakeLists.txt "add_executable(mp_logger_benchmar
 require_contains "test.go-wrapper" scripts/test.sh "go test ./..." "test script runs Go wrapper tests"
 require_contains "agents.read-order" AGENTS.md "Read order:" "AGENTS defines bootstrap read order"
 require_contains "agents.commit-format" AGENTS.md "docs/commit-messages.md" "AGENTS routes commit format to local source"
+require_contains "agents.commit-validator" AGENTS.md "./scripts/validate-commit-message.sh" "AGENTS requires commit message validation before commit"
 require_contains "docs.commit-body" docs/commit-messages.md "The body is mandatory for every commit in this repository." "local commit standard requires commit bodies"
+require_contains "hooks.install" README.md "./scripts/install-git-hooks.sh" "README documents git hook installation"
+require_contains "hook.commit-msg" .githooks/commit-msg "validate-commit-message.sh" "commit-msg hook calls the commit validator"
 require_contains "api.log" include/mp_logger.h "mp_logger_log(" "public header exposes log API"
 require_contains "api.bootstrap" include/mp_logger.h "mp_logger_bootstrap_load(" "public header exposes bootstrap API"
 require_contains "bench.script" README.md "./scripts/benchmark.sh" "README documents the benchmark runner"

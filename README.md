@@ -34,9 +34,12 @@ scripts/                 build, test, deploy, and validator entrypoints
 ./scripts/test.sh
 ./scripts/benchmark.sh
 ./scripts/deploy.sh
+./scripts/install-git-hooks.sh
 ./scripts/validate-static.sh
 ./scripts/validate-llm.sh
 ```
+
+Run `./scripts/install-git-hooks.sh` once per clone to enforce the local commit-message rule through the repo-provided `commit-msg` hook.
 
 ## Bootstrap Config
 
