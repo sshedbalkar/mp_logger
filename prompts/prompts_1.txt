@@ -1,3 +1,9 @@
-Add various usage examples in the README file.
+Add various usage examples in the README file. Done
 
-List all available configuration options for the library in the README file.
+List all available configuration options for the library in the README file. Done
+
+Create benchmarking tests for the module. How many concurrent logs can it write, what is the buffer size for different configurations, when can the buffer be full, how many times a second the logger needs to be called for the buffer to start overflowing, what buffer overflow mechanisms are in place, etc needs to be tested and results should be included in the README. Done
+
+Check if benchamrks about logging speed (to a file stream): how many messages (declare typical message length) can be written to file on a typical hardware (declare hardware specs) in a single thread per sec, and how many concurrent stream writes can the logger support. Include these tests and update results in README.
+
+Include usage exmaples in the 'GO' programming language in the README file.

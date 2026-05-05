@@ -107,6 +107,8 @@ Custom streams receive both the structured record and the already-rendered log l
 
 ## Usage Examples
 
+Go callers should usually wrap this library behind a small cgo adapter so the rest of the service does not depend on C types or manual string lifetimes directly.
+
 ### Start from a bootstrap config file
 
 ```c
@@ -116,10 +118,6 @@ int main(void) {
     mp_logger_t *logger = NULL;
 
     if (mp_logger_create_from_bootstrap("configs/logger.bootstrap.ini", &logger) != MP_LOG_STATUS_OK) {
-        return 1;
-    }
-    if (mp_logger_start(logger) != MP_LOG_STATUS_OK) {
-        mp_logger_destroy(logger);
         return 1;
     }
     (void)mp_logger_log(logger, MP_LOG_LEVEL_INFO, "service started", "port=8080");
@@ -264,6 +262,123 @@ static void print_logger_stats(mp_logger_t *logger) {
         (unsigned long long)stats.dropped_busy,
         (unsigned long long)stats.dropped_full,
         stats.active_stream_count);
+}
+```
+
+### Call the logger from Go with cgo
+
+Adjust the `#cgo` include and library paths for your build layout. These examples keep all C string allocation and logger lifecycle handling inside a narrow Go adapter.
+
+#### Start from a bootstrap config file
+
+```go
+package main
+
+/*
+#cgo CFLAGS: -I${SRCDIR}/include
+#cgo LDFLAGS: -L${SRCDIR} -lmp_logger -lpthread
+#include "mp_logger.h"
+#include <stdlib.h>
+*/
+import "C"
+
+import (
+	"fmt"
+	"unsafe"
+)
+
+func statusText(status C.mp_log_status_t) string {
+	return C.GoString(C.mp_log_status_name(status))
+}
+
+func main() {
+	configPath := C.CString("configs/logger.bootstrap.ini")
+	defer C.free(unsafe.Pointer(configPath))
+
+	var logger *C.mp_logger_t
+	status := C.mp_logger_create_from_bootstrap(configPath, &logger)
+	if status != C.MP_LOG_STATUS_OK {
+		panic(fmt.Sprintf("create_from_bootstrap failed: %s", statusText(status)))
+	}
+	defer C.mp_logger_destroy(logger)
+
+	message := C.CString("service started")
+	context := C.CString("port=8080")
+	defer C.free(unsafe.Pointer(message))
+	defer C.free(unsafe.Pointer(context))
+
+	status = C.mp_logger_log(logger, C.MP_LOG_LEVEL_INFO, message, context)
+	if status != C.MP_LOG_STATUS_OK {
+		panic(fmt.Sprintf("log failed: %s", statusText(status)))
+	}
+	_ = C.mp_logger_flush(logger, 2000)
+	_ = C.mp_logger_shutdown(logger, 2000)
+}
+```
+
+#### Build a logger in code
+
+```go
+package main
+
+/*
+#cgo CFLAGS: -I${SRCDIR}/include
+#cgo LDFLAGS: -L${SRCDIR} -lmp_logger -lpthread
+#include "mp_logger.h"
+#include <string.h>
+
+static void init_payments_config(mp_logger_config_t *config) {
+    mp_logger_config_init_defaults(config);
+    config->buffer_capacity = 1024u;
+    config->message_capacity = 256u;
+    config->context_capacity = 256u;
+    config->format = MP_LOG_FORMAT_JSON;
+    config->pretty_output = 0;
+    strncpy(config->service_name, "payments", sizeof(config->service_name) - 1u);
+    strncpy(config->environment_name, "prod", sizeof(config->environment_name) - 1u);
+    strncpy(config->active_streams, "stdout,file", sizeof(config->active_streams) - 1u);
+    strncpy(config->log_directory, "./logs", sizeof(config->log_directory) - 1u);
+    strncpy(config->file_name_prefix, "payments", sizeof(config->file_name_prefix) - 1u);
+    strncpy(config->backup_file_name_prefix, "payments-internal", sizeof(config->backup_file_name_prefix) - 1u);
+}
+*/
+import "C"
+
+import (
+	"fmt"
+	"unsafe"
+)
+
+func statusText(status C.mp_log_status_t) string {
+	return C.GoString(C.mp_log_status_name(status))
+}
+
+func main() {
+	var config C.mp_logger_config_t
+	var logger *C.mp_logger_t
+
+	C.init_payments_config(&config)
+
+	status := C.mp_logger_create(&config, &logger)
+	if status != C.MP_LOG_STATUS_OK {
+		panic(fmt.Sprintf("create failed: %s", statusText(status)))
+	}
+	defer C.mp_logger_destroy(logger)
+
+	if status = C.mp_logger_start(logger); status != C.MP_LOG_STATUS_OK {
+		panic(fmt.Sprintf("start failed: %s", statusText(status)))
+	}
+
+	message := C.CString("retrying downstream call")
+	context := C.CString("attempt=2")
+	defer C.free(unsafe.Pointer(message))
+	defer C.free(unsafe.Pointer(context))
+
+	status = C.mp_logger_log(logger, C.MP_LOG_LEVEL_WARNING, message, context)
+	if status != C.MP_LOG_STATUS_OK {
+		panic(fmt.Sprintf("log failed: %s", statusText(status)))
+	}
+	_ = C.mp_logger_shutdown(logger, 2000)
 }
 ```
 
