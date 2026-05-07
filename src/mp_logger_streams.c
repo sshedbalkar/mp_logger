@@ -706,6 +706,7 @@ void mp_logger_destroy_streams(mp_logger_t *logger) {
         memset(&logger->streams[index], 0, sizeof(logger->streams[index]));
     }
     logger->stream_count = 0;
+    atomic_store(&logger->enabled_level_mask, 0u);
     (void)pthread_mutex_unlock(&logger->stream_mutex);
 }
 

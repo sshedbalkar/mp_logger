@@ -208,6 +208,22 @@ static mp_log_status_t mp_logger_allocate_buffers(mp_logger_t *logger) {
     return MP_LOG_STATUS_OK;
 }
 
+static uint_fast32_t mp_logger_level_range_mask(
+    mp_log_level_t minimum_level,
+    mp_log_level_t maximum_level) {
+    uint_fast32_t mask = 0u;
+    int level = 0;
+    if (minimum_level < MP_LOG_LEVEL_TRACE ||
+        maximum_level > MP_LOG_LEVEL_FATAL ||
+        minimum_level > maximum_level) {
+        return 0u;
+    }
+    for (level = (int)minimum_level; level <= (int)maximum_level; level++) {
+        mask |= ((uint_fast32_t)1u << (unsigned int)level);
+    }
+    return mask;
+}
+
 /* Reject duplicate stream names up front so sink fanout remains deterministic. */
 mp_log_status_t mp_logger_add_owned_stream(mp_logger_t *logger, const mp_logger_stream_t *stream) {
     size_t index = 0;
@@ -227,6 +243,9 @@ mp_log_status_t mp_logger_add_owned_stream(mp_logger_t *logger, const mp_logger_
     }
     logger->streams[logger->stream_count] = *stream;
     logger->stream_count++;
+    atomic_fetch_or(
+        &logger->enabled_level_mask,
+        mp_logger_level_range_mask(stream->minimum_level, stream->maximum_level));
     (void)pthread_mutex_unlock(&logger->stream_mutex);
     return MP_LOG_STATUS_OK;
 }
@@ -311,6 +330,7 @@ mp_log_status_t mp_logger_create(const mp_logger_config_t *config, mp_logger_t *
     atomic_init(&logger->processed_records_total, 0u);
     atomic_init(&logger->dropped_busy_total, 0u);
     atomic_init(&logger->dropped_full_total, 0u);
+    atomic_init(&logger->enabled_level_mask, 0u);
 
     (void)pthread_mutex_init(&logger->queue_mutex, NULL);
     (void)pthread_mutex_init(&logger->stream_mutex, NULL);
@@ -436,6 +456,20 @@ mp_log_status_t mp_logger_log(
     (void)pthread_cond_signal(&logger->queue_cond);
     (void)ignored_length;
     return MP_LOG_STATUS_OK;
+}
+
+/*
+ * Read the cached stream-level bitmask so callers can cheaply skip work for disabled levels
+ * without contending with worker-side sink dispatch.
+ */
+bool mp_logger_is_level_enabled(const mp_logger_t *logger, mp_log_level_t level) {
+    if (logger == NULL ||
+        logger->shutdown_requested ||
+        level < MP_LOG_LEVEL_TRACE ||
+        level > MP_LOG_LEVEL_FATAL) {
+        return false;
+    }
+    return (atomic_load(&logger->enabled_level_mask) & ((uint_fast32_t)1u << (unsigned int)level)) != 0u;
 }
 
 /* Wait for the processed counter to catch up with the queued counter snapshot taken at entry. */

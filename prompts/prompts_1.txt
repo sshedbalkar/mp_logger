@@ -9,3 +9,7 @@ Check if benchamrks about logging speed (to a file stream): how many messages (d
 Include usage exmaples in the 'GO' programming language in the README file.
 
 All public functions/APIs must have huaman understandable comments, explaining the API in detail. For other methods: if the function body is non trivial, then the function needs to have a comment as well explaining the approach in the body. Verify and validate if this is the case across the project.
+
+Compare this logger module with 'slog' in the 'GO' programming language. Hihglight the most used features in slog and if they are missing in the mp_logger module. Mention any other common features that programmers expect in a logging module.
+
+Add the log level enabled check public function which takes the log level as the input parameter and returns a boolean. 

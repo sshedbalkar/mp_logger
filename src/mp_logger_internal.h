@@ -64,6 +64,7 @@ struct mp_logger {
     atomic_uint_fast64_t processed_records_total;
     atomic_uint_fast64_t dropped_busy_total;
     atomic_uint_fast64_t dropped_full_total;
+    atomic_uint_fast32_t enabled_level_mask;
 };
 
 int64_t mp_logger_now_millis(void);

@@ -1,6 +1,7 @@
 #ifndef MP_LOGGER_H
 #define MP_LOGGER_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -170,6 +171,12 @@ mp_log_status_t mp_logger_log(
     mp_log_level_t level,
     const char *message,
     const char *context_text);
+
+/*
+ * Report whether the logger currently has any registered stream that accepts level.
+ * Returns false for NULL loggers, invalid levels, and loggers that have been shut down.
+ */
+bool mp_logger_is_level_enabled(const mp_logger_t *logger, mp_log_level_t level);
 
 /*
  * Wait until every record queued before the call has been processed or the timeout expires.

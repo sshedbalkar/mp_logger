@@ -189,6 +189,43 @@ static void test_custom_stream_receives_formatted_message(void) {
     mp_logger_destroy(logger);
 }
 
+/* Report whether any currently registered stream would accept a given level. */
+static void test_level_enabled_reports_stream_matches(void) {
+    mp_logger_config_t config;
+    mp_logger_t *logger = NULL;
+    mp_logger_stream_t stream;
+    capture_stream_t *capture = NULL;
+
+    mp_logger_config_init_defaults(&config);
+    (void)snprintf(config.active_streams, sizeof(config.active_streams), "%s", "");
+
+    assert(!mp_logger_is_level_enabled(NULL, MP_LOG_LEVEL_INFO));
+    assert(mp_logger_create(&config, &logger) == MP_LOG_STATUS_OK);
+    assert(!mp_logger_is_level_enabled(logger, MP_LOG_LEVEL_INFO));
+
+    capture = (capture_stream_t *)calloc(1u, sizeof(*capture));
+    assert(capture != NULL);
+    memset(&stream, 0, sizeof(stream));
+    (void)snprintf(stream.stream_name, sizeof(stream.stream_name), "%s", "warnings");
+    stream.minimum_level = MP_LOG_LEVEL_WARNING;
+    stream.maximum_level = MP_LOG_LEVEL_ERROR;
+    stream.stream_context = capture;
+    stream.write = capture_stream_write;
+    stream.destroy = capture_stream_destroy;
+    assert(mp_logger_add_stream(logger, &stream) == MP_LOG_STATUS_OK);
+
+    assert(!mp_logger_is_level_enabled(logger, MP_LOG_LEVEL_INFO));
+    assert(mp_logger_is_level_enabled(logger, MP_LOG_LEVEL_WARNING));
+    assert(mp_logger_is_level_enabled(logger, MP_LOG_LEVEL_ERROR));
+    assert(!mp_logger_is_level_enabled(logger, MP_LOG_LEVEL_FATAL));
+
+    assert(mp_logger_start(logger) == MP_LOG_STATUS_OK);
+    assert(mp_logger_is_level_enabled(logger, MP_LOG_LEVEL_WARNING));
+    assert(mp_logger_shutdown(logger, 2000u) == MP_LOG_STATUS_OK);
+    assert(!mp_logger_is_level_enabled(logger, MP_LOG_LEVEL_WARNING));
+    mp_logger_destroy(logger);
+}
+
 /* Parse an INI override file and verify the loader updates every touched field. */
 static void test_bootstrap_load_applies_overrides(void) {
     const char *config_path = ".tmp/bootstrap-test.ini";
@@ -378,6 +415,7 @@ static void test_stream_limit_is_enforced(void) {
 int main(void) {
     test_queue_full_before_start();
     test_custom_stream_receives_formatted_message();
+    test_level_enabled_reports_stream_matches();
     test_bootstrap_load_applies_overrides();
     test_file_stream_writes_new_run_file();
     test_buffer_saturation_writes_backup_warning();

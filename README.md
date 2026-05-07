@@ -105,6 +105,7 @@ The bootstrap loader accepts root keys plus `[logger]`, `[stdout]`, `[stderr]`, 
 - `mp_logger_add_stream()` registers a custom sink before or after startup.
 - `mp_logger_start()` starts the drain worker.
 - `mp_logger_log()` enqueues a log entry without blocking on sink I/O.
+- `mp_logger_is_level_enabled()` reports whether any registered stream currently accepts a level.
 - `mp_logger_flush()` waits for queued work to drain.
 - `mp_logger_shutdown()` stops the worker after draining the queue.
 
