@@ -136,6 +136,27 @@ static mp_log_status_t mp_logger_apply_logger_value(
         config->context_capacity = parsed_size;
         return MP_LOG_STATUS_OK;
     }
+    if (strcmp(key, "field_capacity") == 0) {
+        if (!mp_logger_parse_size_value(value, &parsed_size)) {
+            return MP_LOG_STATUS_CONFIG_ERROR;
+        }
+        config->field_capacity = parsed_size;
+        return MP_LOG_STATUS_OK;
+    }
+    if (strcmp(key, "field_key_capacity") == 0) {
+        if (!mp_logger_parse_size_value(value, &parsed_size)) {
+            return MP_LOG_STATUS_CONFIG_ERROR;
+        }
+        config->field_key_capacity = parsed_size;
+        return MP_LOG_STATUS_OK;
+    }
+    if (strcmp(key, "field_value_capacity") == 0) {
+        if (!mp_logger_parse_size_value(value, &parsed_size)) {
+            return MP_LOG_STATUS_CONFIG_ERROR;
+        }
+        config->field_value_capacity = parsed_size;
+        return MP_LOG_STATUS_OK;
+    }
     if (strcmp(key, "format") == 0) {
         return mp_logger_parse_format_name(value, &config->format);
     }
@@ -271,6 +292,9 @@ void mp_logger_config_init_defaults(mp_logger_config_t *config) {
     config->buffer_capacity = 1024u;
     config->message_capacity = 512u;
     config->context_capacity = 1024u;
+    config->field_capacity = 8u;
+    config->field_key_capacity = 32u;
+    config->field_value_capacity = 128u;
     config->format = MP_LOG_FORMAT_JSON;
     config->pretty_output = 0;
     mp_logger_copy_trimmed(config->log_directory, sizeof(config->log_directory), ".");

@@ -13,3 +13,5 @@ All public functions/APIs must have huaman understandable comments, explaining t
 Compare this logger module with 'slog' in the 'GO' programming language. Hihglight the most used features in slog and if they are missing in the mp_logger module. Mention any other common features that programmers expect in a logging module.
 
 Add the log level enabled check public function which takes the log level as the input parameter and returns a boolean. 
+
+Make sure the tests for the structured field support cover all aspects including possible security issues and memory overflows, other edge cases, etc. Update Readme with the info/example on structured field support.

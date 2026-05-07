@@ -4,7 +4,7 @@ This package provides a thin cgo wrapper for `mp_logger` at import path `mp_logg
 
 ## Scope
 
-- wraps config loading, logger creation, lifecycle, logging, and stats;
+- wraps config loading, logger creation, lifecycle, plain logging, structured-field logging, and stats;
 - compiles the vendored C sources in this repository, so no prebuilt `libmp_logger` is required;
 - keeps C strings and `mp_logger_t *` ownership inside the wrapper;
 - does not expose custom stream callbacks from Go.
@@ -42,7 +42,13 @@ func main() {
 	}
 	defer logger.Close()
 
-	if err := logger.Log(mplogger.Info, "service started", "port=8080"); err != nil {
+	if err := logger.LogFields(
+		mplogger.Info,
+		"service started",
+		"request_id=req-42",
+		mplogger.String("tenant", "alpha"),
+		mplogger.Bool("ready", true),
+	); err != nil {
 		log.Fatal(err)
 	}
 	if err := logger.Flush(2 * time.Second); err != nil {

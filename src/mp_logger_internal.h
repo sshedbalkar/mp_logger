@@ -18,8 +18,12 @@ typedef struct {
     mp_log_level_t level;
     size_t message_length;
     size_t context_length;
+    size_t field_count;
     char *message_buffer;
     char *context_buffer;
+    mp_log_field_t *fields;
+    char *field_key_storage;
+    char *field_string_storage;
 } mp_log_slot_t;
 
 typedef struct {
@@ -47,6 +51,9 @@ struct mp_logger {
     mp_log_slot_t *slots;
     char *message_storage;
     char *context_storage;
+    mp_log_field_t *field_storage;
+    char *field_key_storage;
+    char *field_string_storage;
     size_t queue_head;
     size_t queue_tail;
     size_t queue_count;

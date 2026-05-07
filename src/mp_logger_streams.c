@@ -138,6 +138,90 @@ static size_t mp_logger_append_text_escaped(
     return used;
 }
 
+static size_t mp_logger_append_json_field_value(
+    char *buffer,
+    size_t capacity,
+    size_t used,
+    const mp_log_field_t *field) {
+    char number_text[64];
+    if (field == NULL) {
+        return used;
+    }
+    switch (field->type) {
+    case MP_LOG_FIELD_STRING:
+        used = mp_logger_append_char(buffer, capacity, used, '"');
+        used = mp_logger_append_json_escaped(
+            buffer,
+            capacity,
+            used,
+            field->value.string_value == NULL ? "" : field->value.string_value);
+        used = mp_logger_append_char(buffer, capacity, used, '"');
+        break;
+    case MP_LOG_FIELD_BOOL:
+        used = mp_logger_append_string(
+            buffer,
+            capacity,
+            used,
+            field->value.bool_value ? "true" : "false");
+        break;
+    case MP_LOG_FIELD_INT64:
+        (void)snprintf(number_text, sizeof(number_text), "%lld", (long long)field->value.int64_value);
+        used = mp_logger_append_string(buffer, capacity, used, number_text);
+        break;
+    case MP_LOG_FIELD_UINT64:
+        (void)snprintf(number_text, sizeof(number_text), "%llu", (unsigned long long)field->value.uint64_value);
+        used = mp_logger_append_string(buffer, capacity, used, number_text);
+        break;
+    case MP_LOG_FIELD_FLOAT64:
+        (void)snprintf(number_text, sizeof(number_text), "%.17g", field->value.float64_value);
+        used = mp_logger_append_string(buffer, capacity, used, number_text);
+        break;
+    }
+    return used;
+}
+
+static size_t mp_logger_append_text_field_value(
+    char *buffer,
+    size_t capacity,
+    size_t used,
+    const mp_log_field_t *field) {
+    char number_text[64];
+    if (field == NULL) {
+        return used;
+    }
+    switch (field->type) {
+    case MP_LOG_FIELD_STRING:
+        used = mp_logger_append_char(buffer, capacity, used, '"');
+        used = mp_logger_append_text_escaped(
+            buffer,
+            capacity,
+            used,
+            field->value.string_value == NULL ? "" : field->value.string_value);
+        used = mp_logger_append_char(buffer, capacity, used, '"');
+        break;
+    case MP_LOG_FIELD_BOOL:
+        used = mp_logger_append_string(
+            buffer,
+            capacity,
+            used,
+            field->value.bool_value ? "true" : "false");
+        break;
+    case MP_LOG_FIELD_INT64:
+        (void)snprintf(number_text, sizeof(number_text), "%lld", (long long)field->value.int64_value);
+        used = mp_logger_append_string(buffer, capacity, used, number_text);
+        break;
+    case MP_LOG_FIELD_UINT64:
+        (void)snprintf(number_text, sizeof(number_text), "%llu", (unsigned long long)field->value.uint64_value);
+        used = mp_logger_append_string(buffer, capacity, used, number_text);
+        break;
+    case MP_LOG_FIELD_FLOAT64:
+        (void)snprintf(number_text, sizeof(number_text), "%.17g", field->value.float64_value);
+        used = mp_logger_append_string(buffer, capacity, used, number_text);
+        break;
+    }
+    return used;
+}
+
 static void mp_logger_finalize_buffer(char *buffer, size_t capacity, size_t used) {
     if (buffer == NULL || capacity == 0) {
         return;
@@ -499,8 +583,9 @@ int mp_logger_level_in_range(
 }
 
 /*
- * Render every record from the structured fields rather than letting sinks rebuild their own view.
- * That keeps JSON/text formatting, escaping, and optional context handling consistent everywhere.
+ * Render every record from the queued fields rather than letting sinks rebuild their own view.
+ * That keeps JSON/text formatting, escaping, and structured attribute handling consistent
+ * everywhere.
  */
 size_t mp_logger_render_record(
     const mp_logger_t *logger,
@@ -582,6 +667,18 @@ size_t mp_logger_render_record(
                 record->context_text);
             used = mp_logger_append_char(buffer, buffer_capacity, used, '"');
         }
+        if (record->fields != NULL) {
+            size_t index = 0;
+            for (index = 0; index < record->field_count; index++) {
+                const mp_log_field_t *field = &record->fields[index];
+                used = mp_logger_append_string(buffer, buffer_capacity, used, separator);
+                used = mp_logger_append_char(buffer, buffer_capacity, used, '"');
+                used = mp_logger_append_json_escaped(buffer, buffer_capacity, used, field->key);
+                used = mp_logger_append_char(buffer, buffer_capacity, used, '"');
+                used = mp_logger_append_string(buffer, buffer_capacity, used, colon);
+                used = mp_logger_append_json_field_value(buffer, buffer_capacity, used, field);
+            }
+        }
         used = mp_logger_append_char(buffer, buffer_capacity, used, '}');
     } else {
         used = mp_logger_append_string(buffer, buffer_capacity, used, timestamp);
@@ -620,6 +717,16 @@ size_t mp_logger_render_record(
                 used,
                 record->context_text);
             used = mp_logger_append_char(buffer, buffer_capacity, used, '"');
+        }
+        if (record->fields != NULL) {
+            size_t index = 0;
+            for (index = 0; index < record->field_count; index++) {
+                const mp_log_field_t *field = &record->fields[index];
+                used = mp_logger_append_char(buffer, buffer_capacity, used, ' ');
+                used = mp_logger_append_string(buffer, buffer_capacity, used, field->key);
+                used = mp_logger_append_char(buffer, buffer_capacity, used, '=');
+                used = mp_logger_append_text_field_value(buffer, buffer_capacity, used, field);
+            }
         }
     }
 

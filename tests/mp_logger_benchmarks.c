@@ -85,14 +85,30 @@ static void benchmark_ensure_directory(const char *path) {
 }
 
 static size_t benchmark_queue_reserved_bytes(const benchmark_profile_t *profile) {
+    mp_logger_config_t config;
+    mp_logger_config_init_defaults(&config);
     return profile->buffer_capacity *
-        (sizeof(mp_log_slot_t) + profile->message_capacity + profile->context_capacity);
+        (sizeof(mp_log_slot_t) +
+            profile->message_capacity +
+            profile->context_capacity +
+            (config.field_capacity * sizeof(mp_log_field_t)) +
+            (config.field_capacity * config.field_key_capacity) +
+            (config.field_capacity * config.field_value_capacity));
 }
 
 static size_t benchmark_worker_reserved_bytes(const benchmark_profile_t *profile) {
-    return (2u * profile->message_capacity) +
-        (2u * profile->context_capacity) +
-        MP_LOGGER_RENDER_PADDING;
+    mp_logger_config_t config;
+    mp_logger_config_init_defaults(&config);
+    return profile->message_capacity +
+        profile->context_capacity +
+        (config.field_capacity * sizeof(mp_log_field_t)) +
+        (config.field_capacity * config.field_key_capacity) +
+        (config.field_capacity * config.field_value_capacity) +
+        (profile->message_capacity +
+            profile->context_capacity +
+            (config.field_capacity *
+                (config.field_key_capacity + config.field_value_capacity + 64u)) +
+            MP_LOGGER_RENDER_PADDING);
 }
 
 static mp_log_status_t benchmark_stream_write(

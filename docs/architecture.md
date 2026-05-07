@@ -13,7 +13,7 @@ The repository needs a reusable logging foundation that stays outside applicatio
 `mp_logger` is implemented as a standalone C library with:
 
 - a validated config object that can be built in code or loaded from a bootstrap INI file;
-- a bounded queue backed by preallocated message and context buffers;
+- a bounded queue backed by preallocated message, context, and structured field buffers;
 - producer calls that use `pthread_mutex_trylock()` and return `BUSY` or `QUEUE_FULL` instead of blocking;
 - one worker thread that dequeues records, renders them once, and fans them out to every active sink;
 - built-in `stdout`, `stderr`, `file`, and `udp` sinks selected from `config.active_streams`;
@@ -55,6 +55,7 @@ The repository needs a reusable logging foundation that stays outside applicatio
 producer thread(s)
     |
     | mp_logger_log(level, message, context)
+    | mp_logger_log_fields(level, message, context, fields...)
     v
 trylock(queue_mutex)
     |
@@ -114,12 +115,13 @@ destroy()
 - Producer calls stay bounded and avoid sink I/O latency.
 - Queue contention and saturation are explicit parts of the API surface and are observable through stats and backup warnings.
 - Rendering is centralized, so built-in and custom sinks receive the same escaped, single-line output.
+- Structured fields stay typed through the queue and render path, so JSON output can preserve booleans and numeric values.
 - Built-in sink initialization can degrade partially; a logger may be created successfully but still fail `start()` if no streams end up active.
 - Slow custom sinks can still stall the worker thread, so sink extensions own their latency budget.
 
 ## Validation
 
-- `tests/mp_logger_tests.c` covers bootstrap overrides, queue saturation before and after startup, custom stream rendering, file-backed output, backup warning emission, and stream-limit enforcement.
+- `tests/mp_logger_tests.c` covers bootstrap overrides, structured field rendering, queue saturation before and after startup, custom stream rendering, file-backed output, backup warning emission, and stream-limit enforcement.
 - `tests/mp_logger_benchmarks.c` measures file-stream throughput, queue pressure, and concurrent producer behavior while documenting the `BUSY` and `QUEUE_FULL` drop paths.
 - `scripts/validate-static.sh` enforces required docs, API presence, install rules, config templates, and unsafe-function bans.
 - `scripts/validate-llm.sh` remains the semantic review layer for drop policy, log hygiene, and extension safety.

@@ -7,6 +7,7 @@ Standalone C logging library for low-latency services and tools.
 - non-blocking log calls backed by a bounded in-memory buffer;
 - concurrent producer support with a dedicated worker thread;
 - levels: `TRACE`, `DEBUG`, `INFO`, `WARNING`, `ERROR`, `FATAL`;
+- first-class structured fields with typed JSON output and ordered text rendering;
 - default streams: `stdout`, `stderr`, and a per-run local file;
 - pluggable stream interface for custom sinks;
 - built-in UDP stream support through bootstrap config;
@@ -61,6 +62,9 @@ The bootstrap loader accepts root keys plus `[logger]`, `[stdout]`, `[stderr]`, 
 | `buffer_capacity` | integer | `1024` | Queue slot count. Must be greater than `0`. |
 | `message_capacity` | integer | `512` | Per-record message buffer size. Must be greater than `1`. |
 | `context_capacity` | integer | `1024` | Per-record context buffer size. Must be greater than `1`. |
+| `field_capacity` | integer | `8` | Maximum structured field count stored per record. Must be greater than `0`. |
+| `field_key_capacity` | integer | `32` | Maximum bytes reserved for one structured field key, including the trailing `\0`. Must be greater than `1`. |
+| `field_value_capacity` | integer | `128` | Maximum bytes reserved for one structured string field value, including the trailing `\0`. Must be greater than `1`. |
 | `format` | enum | `json` | Supported values: `text`, `json`. |
 | `pretty_output` | boolean | `false` | Accepted values: `true`, `false`, `yes`, `no`, `1`, `0`. |
 | `log_directory` | string | `.` | Directory used for per-run primary and backup log files. Must not be empty. |
@@ -105,15 +109,25 @@ The bootstrap loader accepts root keys plus `[logger]`, `[stdout]`, `[stderr]`, 
 - `mp_logger_add_stream()` registers a custom sink before or after startup.
 - `mp_logger_start()` starts the drain worker.
 - `mp_logger_log()` enqueues a log entry without blocking on sink I/O.
+- `mp_logger_log_fields()` enqueues a log entry plus ordered structured fields with typed values.
 - `mp_logger_is_level_enabled()` reports whether any registered stream currently accepts a level.
 - `mp_logger_flush()` waits for queued work to drain.
 - `mp_logger_shutdown()` stops the worker after draining the queue.
 
 Custom streams receive both the structured record and the already-rendered log line. The logger owns stream teardown only when a `destroy` callback is supplied.
+Structured fields support `string`, `bool`, `int64`, `uint64`, and `float64` values. JSON output keeps those types, text output appends them as ordered `key=value` pairs, and each call must use unique keys drawn from ASCII letters, digits, `.`, `_`, and `-`. The built-in keys `ts`, `level`, `service`, `environment`, `sequence_id`, `message`, and `context` are reserved.
+
+Structured field safety rules:
+
+- keys are validated before queue admission, so reserved names, duplicates, empty keys, invalid characters, and over-capacity keys are rejected with `MP_LOG_STATUS_INVALID_ARGUMENT`;
+- string values are bounded by `field_value_capacity`, and over-capacity values are rejected with `MP_LOG_STATUS_LIMIT_EXCEEDED` instead of being truncated;
+- non-finite `float64` values such as `NaN` and `Infinity` are rejected with `MP_LOG_STATUS_INVALID_ARGUMENT`;
+- string values are copied into queue-owned storage on admission, so caller buffers can be reused immediately after `mp_logger_log_fields()` returns;
+- rendered JSON and text output escape control characters so structured fields cannot forge extra records or break the output shape.
 
 ## Usage Examples
 
-The bundled Go wrapper lives in [bindings/go](bindings/go) and compiles the vendored C sources through cgo. It covers bootstrap loading, config-based creation, lifecycle control, `Log()`, and `Stats()`. Custom stream callbacks remain C-only.
+The bundled Go wrapper lives in [bindings/go](bindings/go) and compiles the vendored C sources through cgo. It covers bootstrap loading, config-based creation, lifecycle control, `Log()`, `LogFields()`, and `Stats()`. Custom stream callbacks remain C-only.
 
 ### Start from a bootstrap config file
 
@@ -149,6 +163,9 @@ int main(void) {
     config.buffer_capacity = 1024u;
     config.message_capacity = 256u;
     config.context_capacity = 256u;
+    config.field_capacity = 8u;
+    config.field_key_capacity = 32u;
+    config.field_value_capacity = 128u;
     config.format = MP_LOG_FORMAT_JSON;
     config.pretty_output = 0;
     (void)snprintf(config.service_name, sizeof(config.service_name), "%s", "payments");
@@ -170,6 +187,49 @@ int main(void) {
     mp_logger_destroy(logger);
     return 0;
 }
+```
+
+### Log structured fields in C
+
+```c
+#include "mp_logger.h"
+
+int main(void) {
+    mp_log_field_t fields[] = {
+        mp_log_field_string("tenant", "alpha"),
+        mp_log_field_bool("ok", true),
+        mp_log_field_int64("attempt", 2),
+        mp_log_field_float64("latency_ms", 12.5),
+        mp_log_field_string("note", "quoted\\nvalue")
+    };
+
+    mp_logger_t *logger = NULL;
+    mp_logger_config_t config;
+    mp_logger_config_init_defaults(&config);
+    if (mp_logger_create(&config, &logger) != MP_LOG_STATUS_OK) {
+        return 1;
+    }
+    if (mp_logger_start(logger) != MP_LOG_STATUS_OK) {
+        mp_logger_destroy(logger);
+        return 1;
+    }
+    (void)mp_logger_log_fields(
+        logger,
+        MP_LOG_LEVEL_INFO,
+        "payment accepted",
+        "request_id=req-42",
+        fields,
+        sizeof(fields) / sizeof(fields[0]));
+    (void)mp_logger_shutdown(logger, 2000u);
+    mp_logger_destroy(logger);
+    return 0;
+}
+```
+
+This renders the structured fields as native JSON values in `json` mode, for example:
+
+```json
+{"ts":"2026-05-05T17:21:26.123Z","level":"INFO","service":"mp-service","environment":"development","sequence_id":"1","message":"payment accepted","context":"request_id=req-42","tenant":"alpha","ok":true,"attempt":2,"latency_ms":12.5,"note":"quoted\\nvalue"}
 ```
 
 ### Register a custom stream
@@ -321,6 +381,9 @@ func main() {
 	config.BufferCapacity = 1024
 	config.MessageCapacity = 256
 	config.ContextCapacity = 256
+	config.FieldCapacity = 8
+	config.FieldKeyCapacity = 32
+	config.FieldValueCapacity = 128
 	config.Format = mplogger.JSON
 	config.ServiceName = "payments"
 	config.EnvironmentName = "prod"
@@ -338,7 +401,14 @@ func main() {
 	if err := logger.Start(); err != nil {
 		log.Fatal(err)
 	}
-	if err := logger.Log(mplogger.Warning, "retrying downstream call", "attempt=2"); err != nil {
+	if err := logger.LogFields(
+		mplogger.Warning,
+		"retrying downstream call",
+		"request_id=req-42",
+		mplogger.String("tenant", "alpha"),
+		mplogger.Int64("attempt", 2),
+		mplogger.Bool("retrying", true),
+	); err != nil {
 		log.Fatal(err)
 	}
 	if err := logger.Shutdown(2 * time.Second); err != nil {
@@ -368,7 +438,7 @@ The logger supports up to `8` active streams. Those writes are not parallelized 
 
 ### Buffer footprint by configuration
 
-These figures are derived from the current implementation layout: `buffer_capacity * (sizeof(slot) + message_capacity + context_capacity)` for queue storage, plus worker scratch buffers.
+These figures are derived from the current implementation layout: queue storage includes per-slot metadata, message/context buffers, and structured field buffers, plus worker scratch buffers sized from the same capacities.
 
 | Profile | Slots | Message cap | Context cap | Queue reserved bytes | Worker scratch bytes | Total reserved bytes |
 |:--------|------:|------------:|------------:|---------------------:|---------------------:|---------------------:|

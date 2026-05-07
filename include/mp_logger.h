@@ -45,6 +45,28 @@ typedef enum {
 
 typedef struct mp_logger mp_logger_t;
 
+/* Identifies the stored value type for one structured log field. */
+typedef enum {
+    MP_LOG_FIELD_STRING = 0,
+    MP_LOG_FIELD_BOOL = 1,
+    MP_LOG_FIELD_INT64 = 2,
+    MP_LOG_FIELD_UINT64 = 3,
+    MP_LOG_FIELD_FLOAT64 = 4
+} mp_log_field_type_t;
+
+/* Represents one structured field attached to a record in the order it was supplied. */
+typedef struct {
+    const char *key;
+    mp_log_field_type_t type;
+    union {
+        const char *string_value;
+        bool bool_value;
+        int64_t int64_value;
+        uint64_t uint64_value;
+        double float64_value;
+    } value;
+} mp_log_field_t;
+
 /*
  * Carries the structured fields that every stream callback receives for a dequeued record.
  * The pointers remain valid only for the duration of the callback that receives them.
@@ -55,6 +77,8 @@ typedef struct {
     mp_log_level_t level;
     const char *message;
     const char *context_text;
+    const mp_log_field_t *fields;
+    size_t field_count;
 } mp_log_record_t;
 
 /*
@@ -68,6 +92,9 @@ typedef struct {
     size_t buffer_capacity;
     size_t message_capacity;
     size_t context_capacity;
+    size_t field_capacity;
+    size_t field_key_capacity;
+    size_t field_value_capacity;
     mp_log_format_t format;
     int pretty_output;
     char log_directory[MP_LOGGER_PATH_CAPACITY];
@@ -123,6 +150,21 @@ typedef struct {
     size_t active_stream_count;
 } mp_logger_stats_t;
 
+/* Build a string-valued structured field for mp_logger_log_fields(). */
+mp_log_field_t mp_log_field_string(const char *key, const char *value);
+
+/* Build a boolean structured field for mp_logger_log_fields(). */
+mp_log_field_t mp_log_field_bool(const char *key, bool value);
+
+/* Build a signed 64-bit structured field for mp_logger_log_fields(). */
+mp_log_field_t mp_log_field_int64(const char *key, int64_t value);
+
+/* Build an unsigned 64-bit structured field for mp_logger_log_fields(). */
+mp_log_field_t mp_log_field_uint64(const char *key, uint64_t value);
+
+/* Build a float64 structured field for mp_logger_log_fields(). */
+mp_log_field_t mp_log_field_float64(const char *key, double value);
+
 /*
  * Initialize every config field to the library defaults documented in README.md.
  * Callers typically use this before overriding capacities, stream selection, or metadata.
@@ -171,6 +213,18 @@ mp_log_status_t mp_logger_log(
     mp_log_level_t level,
     const char *message,
     const char *context_text);
+
+/*
+ * Attempt to enqueue one record plus ordered structured fields without blocking on sink I/O.
+ * Field keys must be unique within the call and must not reuse the built-in output keys.
+ */
+mp_log_status_t mp_logger_log_fields(
+    mp_logger_t *logger,
+    mp_log_level_t level,
+    const char *message,
+    const char *context_text,
+    const mp_log_field_t *fields,
+    size_t field_count);
 
 /*
  * Report whether the logger currently has any registered stream that accepts level.

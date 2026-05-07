@@ -23,6 +23,9 @@ func TestDefaultConfigMatchesCLibraryDefaults(t *testing.T) {
 	if config.Format != JSON {
 		t.Fatalf("Format = %v", config.Format)
 	}
+	if config.FieldCapacity != 8 {
+		t.Fatalf("FieldCapacity = %d", config.FieldCapacity)
+	}
 	if config.UDPPort != 5514 {
 		t.Fatalf("UDPPort = %d", config.UDPPort)
 	}
@@ -99,6 +102,9 @@ func TestLoadBootstrapConfigAndCreateFromBootstrap(t *testing.T) {
 		"buffer_capacity = 8",
 		"message_capacity = 96",
 		"context_capacity = 96",
+		"field_capacity = 6",
+		"field_key_capacity = 48",
+		"field_value_capacity = 96",
 		"format = text",
 		"pretty_output = false",
 		"log_directory = " + tempDir,
@@ -124,6 +130,9 @@ func TestLoadBootstrapConfigAndCreateFromBootstrap(t *testing.T) {
 	}
 	if config.FileNamePrefix != "go-bootstrap" {
 		t.Fatalf("FileNamePrefix = %q", config.FileNamePrefix)
+	}
+	if config.FieldCapacity != 6 {
+		t.Fatalf("FieldCapacity = %d", config.FieldCapacity)
 	}
 
 	logger, err := CreateFromBootstrap(configPath)
@@ -157,5 +166,67 @@ func TestCreateRejectsTooLongNames(t *testing.T) {
 
 	if _, err := Create(config); err == nil {
 		t.Fatalf("expected Create() to reject long service name")
+	}
+}
+
+func TestLogFieldsRendersStructuredValues(t *testing.T) {
+	tempDir := t.TempDir()
+	config := DefaultConfig()
+	config.ActiveStreams = "file"
+	config.LogDirectory = tempDir
+	config.FileNamePrefix = "go-structured"
+	config.BackupFileNamePrefix = "go-internal"
+
+	logger, err := Create(config)
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	t.Cleanup(logger.Close)
+
+	if err := logger.Start(); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if err := logger.LogFields(
+		Info,
+		"service started",
+		"request_id=req-1",
+		String("tenant", "alpha"),
+		Bool("ok", true),
+		Int64("attempt", 2),
+		Uint64("bytes", 42),
+		Float64("latency_ms", 12.5),
+	); err != nil {
+		t.Fatalf("LogFields() error = %v", err)
+	}
+	if err := logger.Flush(2 * time.Second); err != nil {
+		t.Fatalf("Flush() error = %v", err)
+	}
+	if err := logger.Shutdown(2 * time.Second); err != nil {
+		t.Fatalf("Shutdown() error = %v", err)
+	}
+
+	matches, err := filepath.Glob(filepath.Join(tempDir, "go-structured*.log"))
+	if err != nil {
+		t.Fatalf("Glob() error = %v", err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("expected 1 log file, got %d", len(matches))
+	}
+
+	logBytes, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	logText := string(logBytes)
+	for _, needle := range []string{
+		`"tenant":"alpha"`,
+		`"ok":true`,
+		`"attempt":2`,
+		`"bytes":42`,
+		`"latency_ms":12.5`,
+	} {
+		if !strings.Contains(logText, needle) {
+			t.Fatalf("log file missing %s: %q", needle, logText)
+		}
 	}
 }

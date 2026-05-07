@@ -5,6 +5,7 @@
 #include <assert.h>
 #include <dirent.h>
 #include <errno.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,6 +17,17 @@ typedef struct {
     char formatted_entry[2048];
     uint64_t write_count;
 } capture_stream_t;
+
+typedef struct {
+    char formatted_entry[2048];
+    uint64_t write_count;
+    size_t field_count;
+    char tenant[64];
+    int ok_value;
+    int64_t attempt_value;
+    uint64_t bytes_value;
+    double latency_value;
+} structured_capture_stream_t;
 
 typedef struct {
     uint32_t delay_millis;
@@ -43,6 +55,46 @@ static mp_log_status_t capture_stream_write(
 }
 
 static void capture_stream_destroy(void *stream_context) {
+    free(stream_context);
+}
+
+static mp_log_status_t structured_capture_stream_write(
+    void *stream_context,
+    const mp_log_record_t *record,
+    const char *formatted_entry,
+    size_t formatted_entry_length) {
+    structured_capture_stream_t *capture = (structured_capture_stream_t *)stream_context;
+    size_t copy_length = formatted_entry_length;
+    size_t index = 0;
+    if (capture == NULL || record == NULL || formatted_entry == NULL) {
+        return MP_LOG_STATUS_INVALID_ARGUMENT;
+    }
+    if (copy_length >= sizeof(capture->formatted_entry)) {
+        copy_length = sizeof(capture->formatted_entry) - 1u;
+    }
+    memcpy(capture->formatted_entry, formatted_entry, copy_length);
+    capture->formatted_entry[copy_length] = '\0';
+    capture->write_count++;
+    capture->field_count = record->field_count;
+
+    for (index = 0; index < record->field_count; index++) {
+        const mp_log_field_t *field = &record->fields[index];
+        if (strcmp(field->key, "tenant") == 0 && field->type == MP_LOG_FIELD_STRING) {
+            (void)snprintf(capture->tenant, sizeof(capture->tenant), "%s", field->value.string_value);
+        } else if (strcmp(field->key, "ok") == 0 && field->type == MP_LOG_FIELD_BOOL) {
+            capture->ok_value = field->value.bool_value ? 1 : 0;
+        } else if (strcmp(field->key, "attempt") == 0 && field->type == MP_LOG_FIELD_INT64) {
+            capture->attempt_value = field->value.int64_value;
+        } else if (strcmp(field->key, "bytes") == 0 && field->type == MP_LOG_FIELD_UINT64) {
+            capture->bytes_value = field->value.uint64_value;
+        } else if (strcmp(field->key, "latency_ms") == 0 && field->type == MP_LOG_FIELD_FLOAT64) {
+            capture->latency_value = field->value.float64_value;
+        }
+    }
+    return MP_LOG_STATUS_OK;
+}
+
+static void structured_capture_stream_destroy(void *stream_context) {
     free(stream_context);
 }
 
@@ -189,6 +241,416 @@ static void test_custom_stream_receives_formatted_message(void) {
     mp_logger_destroy(logger);
 }
 
+/* Preserve typed structured fields across queueing and render them as first-class output fields. */
+static void test_structured_fields_reach_callbacks_and_render_json(void) {
+    mp_logger_config_t config;
+    mp_logger_t *logger = NULL;
+    mp_logger_stream_t stream;
+    structured_capture_stream_t *capture = NULL;
+    mp_log_field_t fields[5];
+
+    mp_logger_config_init_defaults(&config);
+    config.buffer_capacity = 4u;
+    config.message_capacity = 128u;
+    config.context_capacity = 128u;
+    config.field_capacity = 5u;
+    config.field_key_capacity = 32u;
+    config.field_value_capacity = 64u;
+    (void)snprintf(config.active_streams, sizeof(config.active_streams), "%s", "");
+
+    assert(mp_logger_create(&config, &logger) == MP_LOG_STATUS_OK);
+    capture = (structured_capture_stream_t *)calloc(1u, sizeof(*capture));
+    assert(capture != NULL);
+    memset(&stream, 0, sizeof(stream));
+    (void)snprintf(stream.stream_name, sizeof(stream.stream_name), "%s", "structured");
+    stream.minimum_level = MP_LOG_LEVEL_TRACE;
+    stream.maximum_level = MP_LOG_LEVEL_FATAL;
+    stream.stream_context = capture;
+    stream.write = structured_capture_stream_write;
+    stream.destroy = structured_capture_stream_destroy;
+    assert(mp_logger_add_stream(logger, &stream) == MP_LOG_STATUS_OK);
+    assert(mp_logger_start(logger) == MP_LOG_STATUS_OK);
+
+    fields[0] = mp_log_field_string("tenant", "alpha");
+    fields[1] = mp_log_field_bool("ok", true);
+    fields[2] = mp_log_field_int64("attempt", 2);
+    fields[3] = mp_log_field_uint64("bytes", 42u);
+    fields[4] = mp_log_field_float64("latency_ms", 12.5);
+    assert(mp_logger_log_fields(
+        logger,
+        MP_LOG_LEVEL_INFO,
+        "structured",
+        "ctx",
+        fields,
+        sizeof(fields) / sizeof(fields[0])) == MP_LOG_STATUS_OK);
+    assert(mp_logger_flush(logger, 2000u) == MP_LOG_STATUS_OK);
+    assert(mp_logger_shutdown(logger, 2000u) == MP_LOG_STATUS_OK);
+
+    assert(capture->write_count == 1u);
+    assert(capture->field_count == 5u);
+    assert(strcmp(capture->tenant, "alpha") == 0);
+    assert(capture->ok_value == 1);
+    assert(capture->attempt_value == 2);
+    assert(capture->bytes_value == 42u);
+    assert(capture->latency_value == 12.5);
+    assert(strstr(capture->formatted_entry, "\"tenant\":\"alpha\"") != NULL);
+    assert(strstr(capture->formatted_entry, "\"ok\":true") != NULL);
+    assert(strstr(capture->formatted_entry, "\"attempt\":2") != NULL);
+    assert(strstr(capture->formatted_entry, "\"bytes\":42") != NULL);
+    assert(strstr(capture->formatted_entry, "\"latency_ms\":12.5") != NULL);
+    mp_logger_destroy(logger);
+}
+
+/* Copy structured strings into queue-owned storage so caller buffers can change immediately. */
+static void test_structured_fields_copy_strings_before_flush(void) {
+    mp_logger_config_t config;
+    mp_logger_t *logger = NULL;
+    mp_logger_stream_t stream;
+    structured_capture_stream_t *capture = NULL;
+    mp_log_field_t fields[1];
+    char tenant_value[32];
+
+    mp_logger_config_init_defaults(&config);
+    config.buffer_capacity = 4u;
+    config.message_capacity = 128u;
+    config.context_capacity = 128u;
+    config.field_capacity = 2u;
+    config.field_key_capacity = 32u;
+    config.field_value_capacity = 32u;
+    (void)snprintf(config.active_streams, sizeof(config.active_streams), "%s", "");
+
+    assert(mp_logger_create(&config, &logger) == MP_LOG_STATUS_OK);
+    capture = (structured_capture_stream_t *)calloc(1u, sizeof(*capture));
+    assert(capture != NULL);
+    memset(&stream, 0, sizeof(stream));
+    (void)snprintf(stream.stream_name, sizeof(stream.stream_name), "%s", "copy-check");
+    stream.minimum_level = MP_LOG_LEVEL_TRACE;
+    stream.maximum_level = MP_LOG_LEVEL_FATAL;
+    stream.stream_context = capture;
+    stream.write = structured_capture_stream_write;
+    stream.destroy = structured_capture_stream_destroy;
+    assert(mp_logger_add_stream(logger, &stream) == MP_LOG_STATUS_OK);
+    assert(mp_logger_start(logger) == MP_LOG_STATUS_OK);
+
+    (void)snprintf(tenant_value, sizeof(tenant_value), "%s", "alpha");
+    fields[0] = mp_log_field_string("tenant", tenant_value);
+    assert(mp_logger_log_fields(
+        logger,
+        MP_LOG_LEVEL_INFO,
+        "copied",
+        NULL,
+        fields,
+        sizeof(fields) / sizeof(fields[0])) == MP_LOG_STATUS_OK);
+    memset(tenant_value, 'z', sizeof(tenant_value));
+    tenant_value[sizeof(tenant_value) - 1u] = '\0';
+
+    assert(mp_logger_flush(logger, 2000u) == MP_LOG_STATUS_OK);
+    assert(mp_logger_shutdown(logger, 2000u) == MP_LOG_STATUS_OK);
+    assert(strcmp(capture->tenant, "alpha") == 0);
+    assert(strstr(capture->formatted_entry, "\"tenant\":\"alpha\"") != NULL);
+    mp_logger_destroy(logger);
+}
+
+/* Reject invalid structured field sets and append valid fields to text output in order. */
+static void test_structured_fields_validate_and_render_text(void) {
+    mp_logger_config_t config;
+    mp_logger_t *logger = NULL;
+    mp_logger_stream_t stream;
+    capture_stream_t *capture = NULL;
+    mp_log_field_t valid_fields[2];
+    mp_log_field_t reserved_field[1];
+    mp_log_field_t overflow_fields[3];
+
+    mp_logger_config_init_defaults(&config);
+    config.buffer_capacity = 4u;
+    config.message_capacity = 128u;
+    config.context_capacity = 128u;
+    config.field_capacity = 2u;
+    config.field_key_capacity = 32u;
+    config.field_value_capacity = 32u;
+    config.format = MP_LOG_FORMAT_TEXT;
+    (void)snprintf(config.active_streams, sizeof(config.active_streams), "%s", "");
+
+    assert(mp_logger_create(&config, &logger) == MP_LOG_STATUS_OK);
+    capture = (capture_stream_t *)calloc(1u, sizeof(*capture));
+    assert(capture != NULL);
+    memset(&stream, 0, sizeof(stream));
+    (void)snprintf(stream.stream_name, sizeof(stream.stream_name), "%s", "text-capture");
+    stream.minimum_level = MP_LOG_LEVEL_TRACE;
+    stream.maximum_level = MP_LOG_LEVEL_FATAL;
+    stream.stream_context = capture;
+    stream.write = capture_stream_write;
+    stream.destroy = capture_stream_destroy;
+    assert(mp_logger_add_stream(logger, &stream) == MP_LOG_STATUS_OK);
+    assert(mp_logger_start(logger) == MP_LOG_STATUS_OK);
+
+    valid_fields[0] = mp_log_field_string("tenant", "alpha");
+    valid_fields[1] = mp_log_field_bool("ok", true);
+    assert(mp_logger_log_fields(
+        logger,
+        MP_LOG_LEVEL_INFO,
+        "text fields",
+        NULL,
+        valid_fields,
+        sizeof(valid_fields) / sizeof(valid_fields[0])) == MP_LOG_STATUS_OK);
+    assert(mp_logger_flush(logger, 2000u) == MP_LOG_STATUS_OK);
+    assert(strstr(capture->formatted_entry, "tenant=\"alpha\"") != NULL);
+    assert(strstr(capture->formatted_entry, "ok=true") != NULL);
+
+    reserved_field[0] = mp_log_field_string("message", "shadow");
+    assert(mp_logger_log_fields(
+        logger,
+        MP_LOG_LEVEL_INFO,
+        "bad",
+        NULL,
+        reserved_field,
+        sizeof(reserved_field) / sizeof(reserved_field[0])) == MP_LOG_STATUS_INVALID_ARGUMENT);
+
+    overflow_fields[0] = mp_log_field_string("tenant", "alpha");
+    overflow_fields[1] = mp_log_field_bool("ok", true);
+    overflow_fields[2] = mp_log_field_int64("attempt", 3);
+    assert(mp_logger_log_fields(
+        logger,
+        MP_LOG_LEVEL_INFO,
+        "too many",
+        NULL,
+        overflow_fields,
+        sizeof(overflow_fields) / sizeof(overflow_fields[0])) == MP_LOG_STATUS_LIMIT_EXCEEDED);
+
+    assert(mp_logger_shutdown(logger, 2000u) == MP_LOG_STATUS_OK);
+    mp_logger_destroy(logger);
+}
+
+/* Reject malformed structured field inputs before queue admission and accept exact limit fits. */
+static void test_structured_fields_validation_edge_cases(void) {
+    mp_logger_config_t config;
+    mp_logger_t *logger = NULL;
+    char max_key[32];
+    char too_long_key[33];
+    char max_value[32];
+    char too_long_value[33];
+    mp_log_field_t exact_fit[1];
+    mp_log_field_t duplicate_fields[2];
+    mp_log_field_t invalid_key_fields[1];
+    mp_log_field_t null_key_fields[1];
+    mp_log_field_t empty_key_fields[1];
+    mp_log_field_t long_key_fields[1];
+    mp_log_field_t long_value_fields[1];
+    mp_log_field_t null_string_fields[1];
+    mp_log_field_t nan_fields[1];
+    mp_log_field_t inf_fields[1];
+    mp_log_field_t invalid_type_fields[1];
+
+    mp_logger_config_init_defaults(&config);
+    config.field_capacity = 2u;
+    config.field_key_capacity = sizeof(max_key);
+    config.field_value_capacity = sizeof(max_value);
+    assert(mp_logger_create(&config, &logger) == MP_LOG_STATUS_OK);
+
+    memset(max_key, 'k', sizeof(max_key) - 1u);
+    max_key[sizeof(max_key) - 1u] = '\0';
+    memset(too_long_key, 'k', sizeof(too_long_key) - 1u);
+    too_long_key[sizeof(too_long_key) - 1u] = '\0';
+    memset(max_value, 'v', sizeof(max_value) - 1u);
+    max_value[sizeof(max_value) - 1u] = '\0';
+    memset(too_long_value, 'v', sizeof(too_long_value) - 1u);
+    too_long_value[sizeof(too_long_value) - 1u] = '\0';
+
+    exact_fit[0] = mp_log_field_string(max_key, max_value);
+    assert(mp_logger_log_fields(
+        logger,
+        MP_LOG_LEVEL_INFO,
+        "exact fit",
+        NULL,
+        exact_fit,
+        sizeof(exact_fit) / sizeof(exact_fit[0])) == MP_LOG_STATUS_OK);
+
+    duplicate_fields[0] = mp_log_field_string("tenant", "alpha");
+    duplicate_fields[1] = mp_log_field_bool("tenant", true);
+    assert(mp_logger_log_fields(
+        logger,
+        MP_LOG_LEVEL_INFO,
+        "duplicate",
+        NULL,
+        duplicate_fields,
+        sizeof(duplicate_fields) / sizeof(duplicate_fields[0])) == MP_LOG_STATUS_INVALID_ARGUMENT);
+
+    invalid_key_fields[0] = mp_log_field_string("tenant bad", "alpha");
+    assert(mp_logger_log_fields(
+        logger,
+        MP_LOG_LEVEL_INFO,
+        "invalid key",
+        NULL,
+        invalid_key_fields,
+        sizeof(invalid_key_fields) / sizeof(invalid_key_fields[0])) == MP_LOG_STATUS_INVALID_ARGUMENT);
+
+    null_key_fields[0] = mp_log_field_string(NULL, "alpha");
+    assert(mp_logger_log_fields(
+        logger,
+        MP_LOG_LEVEL_INFO,
+        "null key",
+        NULL,
+        null_key_fields,
+        sizeof(null_key_fields) / sizeof(null_key_fields[0])) == MP_LOG_STATUS_INVALID_ARGUMENT);
+
+    empty_key_fields[0] = mp_log_field_string("", "alpha");
+    assert(mp_logger_log_fields(
+        logger,
+        MP_LOG_LEVEL_INFO,
+        "empty key",
+        NULL,
+        empty_key_fields,
+        sizeof(empty_key_fields) / sizeof(empty_key_fields[0])) == MP_LOG_STATUS_INVALID_ARGUMENT);
+
+    assert(mp_logger_log_fields(
+        logger,
+        MP_LOG_LEVEL_INFO,
+        "null fields pointer",
+        NULL,
+        NULL,
+        1u) == MP_LOG_STATUS_INVALID_ARGUMENT);
+
+    long_key_fields[0] = mp_log_field_string(too_long_key, "alpha");
+    assert(mp_logger_log_fields(
+        logger,
+        MP_LOG_LEVEL_INFO,
+        "long key",
+        NULL,
+        long_key_fields,
+        sizeof(long_key_fields) / sizeof(long_key_fields[0])) == MP_LOG_STATUS_INVALID_ARGUMENT);
+
+    long_value_fields[0] = mp_log_field_string("tenant", too_long_value);
+    assert(mp_logger_log_fields(
+        logger,
+        MP_LOG_LEVEL_INFO,
+        "long value",
+        NULL,
+        long_value_fields,
+        sizeof(long_value_fields) / sizeof(long_value_fields[0])) == MP_LOG_STATUS_LIMIT_EXCEEDED);
+
+    null_string_fields[0] = mp_log_field_string("tenant", NULL);
+    assert(mp_logger_log_fields(
+        logger,
+        MP_LOG_LEVEL_INFO,
+        "null string value",
+        NULL,
+        null_string_fields,
+        sizeof(null_string_fields) / sizeof(null_string_fields[0])) == MP_LOG_STATUS_OK);
+
+    nan_fields[0] = mp_log_field_float64("latency_ms", NAN);
+    assert(mp_logger_log_fields(
+        logger,
+        MP_LOG_LEVEL_INFO,
+        "nan",
+        NULL,
+        nan_fields,
+        sizeof(nan_fields) / sizeof(nan_fields[0])) == MP_LOG_STATUS_INVALID_ARGUMENT);
+
+    inf_fields[0] = mp_log_field_float64("latency_ms", INFINITY);
+    assert(mp_logger_log_fields(
+        logger,
+        MP_LOG_LEVEL_INFO,
+        "inf",
+        NULL,
+        inf_fields,
+        sizeof(inf_fields) / sizeof(inf_fields[0])) == MP_LOG_STATUS_INVALID_ARGUMENT);
+
+    invalid_type_fields[0] = mp_log_field_string("tenant", "alpha");
+    invalid_type_fields[0].type = (mp_log_field_type_t)99;
+    assert(mp_logger_log_fields(
+        logger,
+        MP_LOG_LEVEL_INFO,
+        "bad type",
+        NULL,
+        invalid_type_fields,
+        sizeof(invalid_type_fields) / sizeof(invalid_type_fields[0])) == MP_LOG_STATUS_INVALID_ARGUMENT);
+
+    mp_logger_destroy(logger);
+}
+
+/* Escape structured string values so they cannot forge JSON objects or text log lines. */
+static void test_structured_fields_escape_render_output(void) {
+    mp_logger_config_t config;
+    mp_logger_t *json_logger = NULL;
+    mp_logger_t *text_logger = NULL;
+    mp_logger_stream_t json_stream;
+    mp_logger_stream_t text_stream;
+    capture_stream_t *json_capture = NULL;
+    capture_stream_t *text_capture = NULL;
+    mp_log_field_t fields[1];
+
+    mp_logger_config_init_defaults(&config);
+    config.buffer_capacity = 4u;
+    config.message_capacity = 128u;
+    config.context_capacity = 128u;
+    config.field_capacity = 2u;
+    config.field_key_capacity = 32u;
+    config.field_value_capacity = 64u;
+    (void)snprintf(config.active_streams, sizeof(config.active_streams), "%s", "");
+
+    assert(mp_logger_create(&config, &json_logger) == MP_LOG_STATUS_OK);
+    json_capture = (capture_stream_t *)calloc(1u, sizeof(*json_capture));
+    assert(json_capture != NULL);
+    memset(&json_stream, 0, sizeof(json_stream));
+    (void)snprintf(json_stream.stream_name, sizeof(json_stream.stream_name), "%s", "json-escape");
+    json_stream.minimum_level = MP_LOG_LEVEL_TRACE;
+    json_stream.maximum_level = MP_LOG_LEVEL_FATAL;
+    json_stream.stream_context = json_capture;
+    json_stream.write = capture_stream_write;
+    json_stream.destroy = capture_stream_destroy;
+    assert(mp_logger_add_stream(json_logger, &json_stream) == MP_LOG_STATUS_OK);
+    assert(mp_logger_start(json_logger) == MP_LOG_STATUS_OK);
+
+    fields[0] = mp_log_field_string("tenant", "alpha\"\nrole=admin\t\\");
+    assert(mp_logger_log_fields(
+        json_logger,
+        MP_LOG_LEVEL_INFO,
+        "escaped",
+        NULL,
+        fields,
+        sizeof(fields) / sizeof(fields[0])) == MP_LOG_STATUS_OK);
+    assert(mp_logger_flush(json_logger, 2000u) == MP_LOG_STATUS_OK);
+    assert(mp_logger_shutdown(json_logger, 2000u) == MP_LOG_STATUS_OK);
+    assert(strstr(json_capture->formatted_entry, "\"tenant\":\"alpha\\\"\\nrole=admin\\t\\\\\"") != NULL);
+    mp_logger_destroy(json_logger);
+
+    mp_logger_config_init_defaults(&config);
+    config.buffer_capacity = 4u;
+    config.message_capacity = 128u;
+    config.context_capacity = 128u;
+    config.field_capacity = 2u;
+    config.field_key_capacity = 32u;
+    config.field_value_capacity = 64u;
+    config.format = MP_LOG_FORMAT_TEXT;
+    (void)snprintf(config.active_streams, sizeof(config.active_streams), "%s", "");
+
+    assert(mp_logger_create(&config, &text_logger) == MP_LOG_STATUS_OK);
+    text_capture = (capture_stream_t *)calloc(1u, sizeof(*text_capture));
+    assert(text_capture != NULL);
+    memset(&text_stream, 0, sizeof(text_stream));
+    (void)snprintf(text_stream.stream_name, sizeof(text_stream.stream_name), "%s", "text-escape");
+    text_stream.minimum_level = MP_LOG_LEVEL_TRACE;
+    text_stream.maximum_level = MP_LOG_LEVEL_FATAL;
+    text_stream.stream_context = text_capture;
+    text_stream.write = capture_stream_write;
+    text_stream.destroy = capture_stream_destroy;
+    assert(mp_logger_add_stream(text_logger, &text_stream) == MP_LOG_STATUS_OK);
+    assert(mp_logger_start(text_logger) == MP_LOG_STATUS_OK);
+
+    fields[0] = mp_log_field_string("tenant", "alpha\"\nrole=admin\t\\");
+    assert(mp_logger_log_fields(
+        text_logger,
+        MP_LOG_LEVEL_INFO,
+        "escaped",
+        NULL,
+        fields,
+        sizeof(fields) / sizeof(fields[0])) == MP_LOG_STATUS_OK);
+    assert(mp_logger_flush(text_logger, 2000u) == MP_LOG_STATUS_OK);
+    assert(mp_logger_shutdown(text_logger, 2000u) == MP_LOG_STATUS_OK);
+    assert(strstr(text_capture->formatted_entry, "tenant=\"alpha\\\"\\nrole=admin\\t\\\\\"") != NULL);
+    mp_logger_destroy(text_logger);
+}
+
 /* Report whether any currently registered stream would accept a given level. */
 static void test_level_enabled_reports_stream_matches(void) {
     mp_logger_config_t config;
@@ -240,6 +702,9 @@ static void test_bootstrap_load_applies_overrides(void) {
         "buffer_capacity = 8\n"
         "message_capacity = 96\n"
         "context_capacity = 112\n"
+        "field_capacity = 6\n"
+        "field_key_capacity = 40\n"
+        "field_value_capacity = 80\n"
         "format = text\n"
         "pretty_output = true\n"
         "log_directory = .tmp/logger-bootstrap\n"
@@ -262,6 +727,9 @@ static void test_bootstrap_load_applies_overrides(void) {
     assert(config.buffer_capacity == 8u);
     assert(config.message_capacity == 96u);
     assert(config.context_capacity == 112u);
+    assert(config.field_capacity == 6u);
+    assert(config.field_key_capacity == 40u);
+    assert(config.field_value_capacity == 80u);
     assert(config.format == MP_LOG_FORMAT_TEXT);
     assert(config.pretty_output == 1);
     assert(strcmp(config.file_name_prefix, "bootstrap-log") == 0);
@@ -415,6 +883,11 @@ static void test_stream_limit_is_enforced(void) {
 int main(void) {
     test_queue_full_before_start();
     test_custom_stream_receives_formatted_message();
+    test_structured_fields_reach_callbacks_and_render_json();
+    test_structured_fields_copy_strings_before_flush();
+    test_structured_fields_validate_and_render_text();
+    test_structured_fields_validation_edge_cases();
+    test_structured_fields_escape_render_output();
     test_level_enabled_reports_stream_matches();
     test_bootstrap_load_applies_overrides();
     test_file_stream_writes_new_run_file();

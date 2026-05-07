@@ -5,6 +5,26 @@ package mplogger
 #cgo LDFLAGS: -lpthread
 #include <stdlib.h>
 #include "mp_logger.h"
+
+static inline void go_mp_logger_set_field_string(mp_log_field_t *field, const char *key, const char *value) {
+	*field = mp_log_field_string(key, value);
+}
+
+static inline void go_mp_logger_set_field_bool(mp_log_field_t *field, const char *key, _Bool value) {
+	*field = mp_log_field_bool(key, value);
+}
+
+static inline void go_mp_logger_set_field_int64(mp_log_field_t *field, const char *key, int64_t value) {
+	*field = mp_log_field_int64(key, value);
+}
+
+static inline void go_mp_logger_set_field_uint64(mp_log_field_t *field, const char *key, uint64_t value) {
+	*field = mp_log_field_uint64(key, value);
+}
+
+static inline void go_mp_logger_set_field_float64(mp_log_field_t *field, const char *key, double value) {
+	*field = mp_log_field_float64(key, value);
+}
 */
 import "C"
 
@@ -90,6 +110,9 @@ type Config struct {
 	BufferCapacity       int
 	MessageCapacity      int
 	ContextCapacity      int
+	FieldCapacity        int
+	FieldKeyCapacity     int
+	FieldValueCapacity   int
 	Format               Format
 	PrettyOutput         bool
 	LogDirectory         string
@@ -115,6 +138,27 @@ type Stats struct {
 	DroppedBusy       uint64
 	DroppedFull       uint64
 	ActiveStreamCount int
+}
+
+type fieldKind uint8
+
+const (
+	fieldKindString fieldKind = iota
+	fieldKindBool
+	fieldKindInt64
+	fieldKindUint64
+	fieldKindFloat64
+)
+
+// Field carries one typed structured attribute for LogFields.
+type Field struct {
+	Key          string
+	kind         fieldKind
+	stringValue  string
+	boolValue    bool
+	int64Value   int64
+	uint64Value  uint64
+	float64Value float64
 }
 
 // Logger owns the underlying C logger pointer and serializes access to Close.
@@ -171,6 +215,31 @@ func CreateFromBootstrap(path string) (*Logger, error) {
 	return &Logger{ptr: logger}, nil
 }
 
+// String returns a string-valued structured field for LogFields.
+func String(key string, value string) Field {
+	return Field{Key: key, kind: fieldKindString, stringValue: value}
+}
+
+// Bool returns a boolean structured field for LogFields.
+func Bool(key string, value bool) Field {
+	return Field{Key: key, kind: fieldKindBool, boolValue: value}
+}
+
+// Int64 returns a signed 64-bit structured field for LogFields.
+func Int64(key string, value int64) Field {
+	return Field{Key: key, kind: fieldKindInt64, int64Value: value}
+}
+
+// Uint64 returns an unsigned 64-bit structured field for LogFields.
+func Uint64(key string, value uint64) Field {
+	return Field{Key: key, kind: fieldKindUint64, uint64Value: value}
+}
+
+// Float64 returns a float64 structured field for LogFields.
+func Float64(key string, value float64) Field {
+	return Field{Key: key, kind: fieldKindFloat64, float64Value: value}
+}
+
 // Start launches the worker thread that drains queued records to sinks.
 func (logger *Logger) Start() error {
 	return logger.withPtr("start", func(ptr *C.mp_logger_t) C.mp_log_status_t {
@@ -191,6 +260,38 @@ func (logger *Logger) Log(level Level, message string, context string) error {
 
 	return logger.withPtr("log", func(ptr *C.mp_logger_t) C.mp_log_status_t {
 		return C.mp_logger_log(ptr, C.mp_log_level_t(level), messageText, contextText)
+	})
+}
+
+// LogFields attempts to enqueue one record plus typed structured fields without blocking on sink I/O.
+func (logger *Logger) LogFields(level Level, message string, context string, fields ...Field) error {
+	messageText := C.CString(message)
+	defer C.free(unsafe.Pointer(messageText))
+
+	var contextText *C.char
+	if context != "" {
+		contextText = C.CString(context)
+		defer C.free(unsafe.Pointer(contextText))
+	}
+
+	cFields, allocations, err := fieldsToC(fields)
+	if err != nil {
+		return err
+	}
+	defer freeAllocations(allocations)
+	if cFields != nil {
+		defer C.free(unsafe.Pointer(cFields))
+	}
+
+	return logger.withPtr("log_fields", func(ptr *C.mp_logger_t) C.mp_log_status_t {
+		return C.mp_logger_log_fields(
+			ptr,
+			C.mp_log_level_t(level),
+			messageText,
+			contextText,
+			cFields,
+			C.size_t(len(fields)),
+		)
 	})
 }
 
@@ -266,6 +367,15 @@ func (config Config) toC() (C.mp_logger_config_t, error) {
 	if out.context_capacity, err = toSize(config.ContextCapacity, "context_capacity"); err != nil {
 		return C.mp_logger_config_t{}, err
 	}
+	if out.field_capacity, err = toSize(config.FieldCapacity, "field_capacity"); err != nil {
+		return C.mp_logger_config_t{}, err
+	}
+	if out.field_key_capacity, err = toSize(config.FieldKeyCapacity, "field_key_capacity"); err != nil {
+		return C.mp_logger_config_t{}, err
+	}
+	if out.field_value_capacity, err = toSize(config.FieldValueCapacity, "field_value_capacity"); err != nil {
+		return C.mp_logger_config_t{}, err
+	}
 	out.format = C.mp_log_format_t(config.Format)
 	if config.PrettyOutput {
 		out.pretty_output = 1
@@ -314,6 +424,9 @@ func configFromC(config C.mp_logger_config_t) Config {
 		BufferCapacity:       int(config.buffer_capacity),
 		MessageCapacity:      int(config.message_capacity),
 		ContextCapacity:      int(config.context_capacity),
+		FieldCapacity:        int(config.field_capacity),
+		FieldKeyCapacity:     int(config.field_key_capacity),
+		FieldValueCapacity:   int(config.field_value_capacity),
 		Format:               Format(config.format),
 		PrettyOutput:         config.pretty_output != 0,
 		LogDirectory:         readCString(&config.log_directory[0]),
@@ -340,6 +453,56 @@ func statusError(op string, status C.mp_log_status_t) error {
 	return &StatusError{
 		Op:     op,
 		Status: Status(status),
+	}
+}
+
+func fieldsToC(fields []Field) (*C.mp_log_field_t, []unsafe.Pointer, error) {
+	if len(fields) == 0 {
+		return nil, nil, nil
+	}
+
+	size := C.size_t(len(fields)) * C.size_t(C.sizeof_mp_log_field_t)
+	base := (*C.mp_log_field_t)(C.malloc(size))
+	if base == nil {
+		return nil, nil, fmt.Errorf("failed to allocate structured fields")
+	}
+
+	allocations := make([]unsafe.Pointer, 0, len(fields)*2)
+	slice := unsafe.Slice(base, len(fields))
+	for index, field := range fields {
+		key := C.CString(field.Key)
+		allocations = append(allocations, unsafe.Pointer(key))
+
+		switch field.kind {
+		case fieldKindString:
+			value := C.CString(field.stringValue)
+			allocations = append(allocations, unsafe.Pointer(value))
+			C.go_mp_logger_set_field_string(&slice[index], key, value)
+		case fieldKindBool:
+			boolValue := C.bool(false)
+			if field.boolValue {
+				boolValue = C.bool(true)
+			}
+			C.go_mp_logger_set_field_bool(&slice[index], key, boolValue)
+		case fieldKindInt64:
+			C.go_mp_logger_set_field_int64(&slice[index], key, C.int64_t(field.int64Value))
+		case fieldKindUint64:
+			C.go_mp_logger_set_field_uint64(&slice[index], key, C.uint64_t(field.uint64Value))
+		case fieldKindFloat64:
+			C.go_mp_logger_set_field_float64(&slice[index], key, C.double(field.float64Value))
+		default:
+			C.free(unsafe.Pointer(base))
+			freeAllocations(allocations)
+			return nil, nil, fmt.Errorf("unsupported field kind for key %q", field.Key)
+		}
+	}
+
+	return base, allocations, nil
+}
+
+func freeAllocations(allocations []unsafe.Pointer) {
+	for _, allocation := range allocations {
+		C.free(allocation)
 	}
 }
 

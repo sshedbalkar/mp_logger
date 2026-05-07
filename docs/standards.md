@@ -9,7 +9,7 @@ These rules describe the implementation-backed standards for the standalone logg
 ```text
 producer thread(s)
     |
-    | mp_logger_log()
+    | mp_logger_log() / mp_logger_log_fields()
     v
 trylock queue mutex
     |
@@ -41,8 +41,8 @@ worker thread
 
 - Keep producer-side logging non-blocking with `pthread_mutex_trylock()` on the queue path.
 - Keep producer-side logging free of sink I/O and heap allocation after logger creation.
-- Keep queue storage bounded and preallocated from `buffer_capacity`, `message_capacity`, and `context_capacity`.
-- Keep the worker copying queued message and context text into thread-local scratch buffers before invoking stream callbacks.
+- Keep queue storage bounded and preallocated from `buffer_capacity`, `message_capacity`, `context_capacity`, and structured field capacities.
+- Keep the worker copying queued message, context text, and structured field storage into thread-local scratch buffers before invoking stream callbacks.
 - Keep drop behavior explicit: contention returns `MP_LOG_STATUS_BUSY`, saturation returns `MP_LOG_STATUS_QUEUE_FULL`.
 
 ## Configuration Rules
@@ -52,16 +52,18 @@ worker thread
 - Keep supported bootstrap sections limited to root keys plus `[logger]`, `[stdout]`, `[stderr]`, `[file]`, and `[udp]`.
 - Keep `active_streams` comma-separated, order-preserving, and trim surrounding ASCII whitespace; an empty value disables built-in streams.
 - Keep built-in stream names limited to `stdout`, `stderr`, `file`, and `udp`.
+- Keep structured field keys unique within a single log call and reject keys that would collide with built-in rendered keys.
 - Keep `log_directory` defaulting to `.` so primary and backup files land in the current working directory unless overridden.
 - Keep file name prefixes sanitized to ASCII letters, digits, `_`, and `-` before path construction.
 
 ## Rendering And Sink Rules
 
 - Keep rendering centralized on the worker thread so every sink sees the same formatted entry.
-- Keep every rendered record carrying timestamp, level, service, environment, sequence ID, message, and optional context.
+- Keep every rendered record carrying timestamp, level, service, environment, sequence ID, message, optional context, and ordered structured fields when supplied.
 - Keep timestamps in UTC with millisecond precision.
 - Keep text and JSON output single-line and escaped so control characters cannot forge extra records.
 - Keep `pretty_output` limited to JSON spacing changes; it must not change the field set or switch to multi-line output.
+- Keep JSON output preserving the native structured field types supported by the public API.
 - Keep stream callbacks receiving both the structured record and the already rendered entry.
 - Keep stream names unique within a logger instance.
 
@@ -80,7 +82,7 @@ worker thread
 
 ## Validation Rules
 
-- Keep unit tests covering bootstrap overrides, pre-start saturation, custom stream rendering, file output, backup warning emission, and stream-limit enforcement.
+- Keep unit tests covering bootstrap overrides, structured field rendering, pre-start saturation, custom stream rendering, file output, backup warning emission, and stream-limit enforcement.
 - Keep benchmark coverage documenting queue contention and saturation behavior alongside throughput measurements.
 - Keep static validation checking required docs, install rules, config templates, public API presence, and unsafe C function absence.
 - Keep doc, context, and script changes validated with `./scripts/validate-static.sh`.

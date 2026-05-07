@@ -3,7 +3,9 @@
 
 #include "mp_logger_internal.h"
 
+#include <ctype.h>
 #include <errno.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -29,6 +31,211 @@ static void mp_logger_make_run_suffix(char *buffer, size_t buffer_capacity) {
     }
     if (strftime(buffer, buffer_capacity, "%Y%m%dT%H%M%SZ", &utc_time) == 0) {
         (void)snprintf(buffer, buffer_capacity, "19700101T000000Z");
+    }
+}
+
+static int mp_logger_is_reserved_field_key(const char *key) {
+    static const char *const reserved_keys[] = {
+        "ts",
+        "level",
+        "service",
+        "environment",
+        "sequence_id",
+        "message",
+        "context"
+    };
+    size_t index = 0;
+    if (key == NULL) {
+        return 0;
+    }
+    for (index = 0; index < sizeof(reserved_keys) / sizeof(reserved_keys[0]); index++) {
+        if (strcmp(key, reserved_keys[index]) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int mp_logger_is_valid_field_key(const char *key) {
+    size_t index = 0;
+    if (key == NULL || key[0] == '\0' || mp_logger_is_reserved_field_key(key)) {
+        return 0;
+    }
+    while (key[index] != '\0') {
+        unsigned char current = (unsigned char)key[index];
+        if (!(isalnum(current) || current == '_' || current == '-' || current == '.')) {
+            return 0;
+        }
+        index++;
+    }
+    return 1;
+}
+
+static mp_log_status_t mp_logger_validate_fields(
+    const mp_logger_t *logger,
+    const mp_log_field_t *fields,
+    size_t field_count) {
+    size_t index = 0;
+    size_t other_index = 0;
+    if (field_count == 0) {
+        return MP_LOG_STATUS_OK;
+    }
+    if (logger == NULL || fields == NULL) {
+        return MP_LOG_STATUS_INVALID_ARGUMENT;
+    }
+    if (field_count > logger->config.field_capacity) {
+        return MP_LOG_STATUS_LIMIT_EXCEEDED;
+    }
+    for (index = 0; index < field_count; index++) {
+        const mp_log_field_t *field = &fields[index];
+        const char *string_value = field->type == MP_LOG_FIELD_STRING ? field->value.string_value : NULL;
+        if (!mp_logger_is_valid_field_key(field->key) ||
+            strlen(field->key) >= logger->config.field_key_capacity) {
+            return MP_LOG_STATUS_INVALID_ARGUMENT;
+        }
+        for (other_index = index + 1u; other_index < field_count; other_index++) {
+            if (fields[other_index].key != NULL &&
+                strcmp(field->key, fields[other_index].key) == 0) {
+                return MP_LOG_STATUS_INVALID_ARGUMENT;
+            }
+        }
+        switch (field->type) {
+        case MP_LOG_FIELD_STRING:
+            if (string_value != NULL &&
+                strlen(string_value) >= logger->config.field_value_capacity) {
+                return MP_LOG_STATUS_LIMIT_EXCEEDED;
+            }
+            break;
+        case MP_LOG_FIELD_BOOL:
+        case MP_LOG_FIELD_INT64:
+        case MP_LOG_FIELD_UINT64:
+            break;
+        case MP_LOG_FIELD_FLOAT64:
+            if (!isfinite(field->value.float64_value)) {
+                return MP_LOG_STATUS_INVALID_ARGUMENT;
+            }
+            break;
+        default:
+            return MP_LOG_STATUS_INVALID_ARGUMENT;
+        }
+    }
+    return MP_LOG_STATUS_OK;
+}
+
+static void mp_logger_copy_fields_to_slot(
+    const mp_logger_t *logger,
+    mp_log_slot_t *slot,
+    const mp_log_field_t *fields,
+    size_t field_count) {
+    size_t index = 0;
+    if (logger == NULL || slot == NULL) {
+        return;
+    }
+    slot->field_count = field_count;
+    for (index = 0; index < field_count; index++) {
+        const mp_log_field_t *source = &fields[index];
+        mp_log_field_t *dest = &slot->fields[index];
+        char *key_buffer = slot->field_key_storage + (index * logger->config.field_key_capacity);
+        char *string_buffer = slot->field_string_storage + (index * logger->config.field_value_capacity);
+        memset(dest, 0, sizeof(*dest));
+        mp_logger_copy_truncated(
+            key_buffer,
+            logger->config.field_key_capacity,
+            source->key,
+            NULL);
+        dest->key = key_buffer;
+        dest->type = source->type;
+        switch (source->type) {
+        case MP_LOG_FIELD_STRING:
+            mp_logger_copy_truncated(
+                string_buffer,
+                logger->config.field_value_capacity,
+                source->value.string_value == NULL ? "" : source->value.string_value,
+                NULL);
+            dest->value.string_value = string_buffer;
+            break;
+        case MP_LOG_FIELD_BOOL:
+            dest->value.bool_value = source->value.bool_value;
+            break;
+        case MP_LOG_FIELD_INT64:
+            dest->value.int64_value = source->value.int64_value;
+            break;
+        case MP_LOG_FIELD_UINT64:
+            dest->value.uint64_value = source->value.uint64_value;
+            break;
+        case MP_LOG_FIELD_FLOAT64:
+            dest->value.float64_value = source->value.float64_value;
+            break;
+        }
+    }
+}
+
+static void mp_logger_copy_record_from_slot(
+    const mp_logger_t *logger,
+    const mp_log_slot_t *slot,
+    mp_log_record_t *record,
+    char *message_buffer,
+    char *context_buffer,
+    mp_log_field_t *field_buffer,
+    char *field_key_buffer,
+    char *field_string_buffer) {
+    size_t index = 0;
+    if (logger == NULL ||
+        slot == NULL ||
+        record == NULL ||
+        message_buffer == NULL ||
+        context_buffer == NULL ||
+        field_buffer == NULL ||
+        field_key_buffer == NULL ||
+        field_string_buffer == NULL) {
+        return;
+    }
+
+    memcpy(message_buffer, slot->message_buffer, slot->message_length + 1u);
+    memcpy(context_buffer, slot->context_buffer, slot->context_length + 1u);
+    record->sequence_id = slot->sequence_id;
+    record->unix_epoch_millis = slot->unix_epoch_millis;
+    record->level = slot->level;
+    record->message = message_buffer;
+    record->context_text = context_buffer;
+    record->fields = field_buffer;
+    record->field_count = slot->field_count;
+
+    for (index = 0; index < slot->field_count; index++) {
+        const mp_log_field_t *source = &slot->fields[index];
+        mp_log_field_t *dest = &field_buffer[index];
+        char *key_buffer = field_key_buffer + (index * logger->config.field_key_capacity);
+        char *string_buffer = field_string_buffer + (index * logger->config.field_value_capacity);
+        memset(dest, 0, sizeof(*dest));
+        mp_logger_copy_truncated(
+            key_buffer,
+            logger->config.field_key_capacity,
+            source->key,
+            NULL);
+        dest->key = key_buffer;
+        dest->type = source->type;
+        switch (source->type) {
+        case MP_LOG_FIELD_STRING:
+            mp_logger_copy_truncated(
+                string_buffer,
+                logger->config.field_value_capacity,
+                source->value.string_value == NULL ? "" : source->value.string_value,
+                NULL);
+            dest->value.string_value = string_buffer;
+            break;
+        case MP_LOG_FIELD_BOOL:
+            dest->value.bool_value = source->value.bool_value;
+            break;
+        case MP_LOG_FIELD_INT64:
+            dest->value.int64_value = source->value.int64_value;
+            break;
+        case MP_LOG_FIELD_UINT64:
+            dest->value.uint64_value = source->value.uint64_value;
+            break;
+        case MP_LOG_FIELD_FLOAT64:
+            dest->value.float64_value = source->value.float64_value;
+            break;
+        }
     }
 }
 
@@ -78,6 +285,9 @@ static void *mp_logger_worker_main(void *context) {
     mp_logger_t *logger = (mp_logger_t *)context;
     char *message_buffer = NULL;
     char *context_buffer = NULL;
+    mp_log_field_t *field_buffer = NULL;
+    char *field_key_buffer = NULL;
+    char *field_string_buffer = NULL;
     char *render_buffer = NULL;
     uint64_t last_busy_total = 0;
     uint64_t last_full_total = 0;
@@ -88,11 +298,26 @@ static void *mp_logger_worker_main(void *context) {
 
     message_buffer = (char *)calloc(logger->config.message_capacity, 1u);
     context_buffer = (char *)calloc(logger->config.context_capacity, 1u);
+    field_buffer = (mp_log_field_t *)calloc(logger->config.field_capacity, sizeof(*field_buffer));
+    field_key_buffer = (char *)calloc(
+        logger->config.field_capacity * logger->config.field_key_capacity,
+        1u);
+    field_string_buffer = (char *)calloc(
+        logger->config.field_capacity * logger->config.field_value_capacity,
+        1u);
     render_buffer = (char *)calloc(logger->render_capacity, 1u);
-    if (message_buffer == NULL || context_buffer == NULL || render_buffer == NULL) {
+    if (message_buffer == NULL ||
+        context_buffer == NULL ||
+        field_buffer == NULL ||
+        field_key_buffer == NULL ||
+        field_string_buffer == NULL ||
+        render_buffer == NULL) {
         mp_logger_backup_write(logger, "ERROR", "worker thread could not allocate local buffers");
         free(message_buffer);
         free(context_buffer);
+        free(field_buffer);
+        free(field_key_buffer);
+        free(field_string_buffer);
         free(render_buffer);
         return NULL;
     }
@@ -108,13 +333,15 @@ static void *mp_logger_worker_main(void *context) {
         }
         if (logger->queue_count > 0) {
             mp_log_slot_t *slot = &logger->slots[logger->queue_head];
-            memcpy(message_buffer, slot->message_buffer, slot->message_length + 1u);
-            memcpy(context_buffer, slot->context_buffer, slot->context_length + 1u);
-            record.sequence_id = slot->sequence_id;
-            record.unix_epoch_millis = slot->unix_epoch_millis;
-            record.level = slot->level;
-            record.message = message_buffer;
-            record.context_text = context_buffer;
+            mp_logger_copy_record_from_slot(
+                logger,
+                slot,
+                &record,
+                message_buffer,
+                context_buffer,
+                field_buffer,
+                field_key_buffer,
+                field_string_buffer);
             logger->queue_head = (logger->queue_head + 1u) % logger->config.buffer_capacity;
             logger->queue_count--;
             have_record = 1;
@@ -168,6 +395,9 @@ static void *mp_logger_worker_main(void *context) {
     mp_logger_flush_drop_counters(logger, &last_busy_total, &last_full_total);
     free(message_buffer);
     free(context_buffer);
+    free(field_buffer);
+    free(field_key_buffer);
+    free(field_string_buffer);
     free(render_buffer);
     return NULL;
 }
@@ -179,6 +409,9 @@ static int mp_logger_validate_config(const mp_logger_config_t *config) {
     return config->buffer_capacity > 0 &&
         config->message_capacity > 1 &&
         config->context_capacity > 1 &&
+        config->field_capacity > 0 &&
+        config->field_key_capacity > 1 &&
+        config->field_value_capacity > 1 &&
         config->service_name[0] != '\0' &&
         config->environment_name[0] != '\0' &&
         config->file_name_prefix[0] != '\0' &&
@@ -196,7 +429,21 @@ static mp_log_status_t mp_logger_allocate_buffers(mp_logger_t *logger) {
     logger->context_storage = (char *)calloc(
         logger->config.buffer_capacity * logger->config.context_capacity,
         1u);
-    if (logger->slots == NULL || logger->message_storage == NULL || logger->context_storage == NULL) {
+    logger->field_storage = (mp_log_field_t *)calloc(
+        logger->config.buffer_capacity * logger->config.field_capacity,
+        sizeof(mp_log_field_t));
+    logger->field_key_storage = (char *)calloc(
+        logger->config.buffer_capacity * logger->config.field_capacity * logger->config.field_key_capacity,
+        1u);
+    logger->field_string_storage = (char *)calloc(
+        logger->config.buffer_capacity * logger->config.field_capacity * logger->config.field_value_capacity,
+        1u);
+    if (logger->slots == NULL ||
+        logger->message_storage == NULL ||
+        logger->context_storage == NULL ||
+        logger->field_storage == NULL ||
+        logger->field_key_storage == NULL ||
+        logger->field_string_storage == NULL) {
         return MP_LOG_STATUS_IO_ERROR;
     }
     for (index = 0; index < logger->config.buffer_capacity; index++) {
@@ -204,6 +451,14 @@ static mp_log_status_t mp_logger_allocate_buffers(mp_logger_t *logger) {
             logger->message_storage + (index * logger->config.message_capacity);
         logger->slots[index].context_buffer =
             logger->context_storage + (index * logger->config.context_capacity);
+        logger->slots[index].fields =
+            logger->field_storage + (index * logger->config.field_capacity);
+        logger->slots[index].field_key_storage =
+            logger->field_key_storage +
+            (index * logger->config.field_capacity * logger->config.field_key_capacity);
+        logger->slots[index].field_string_storage =
+            logger->field_string_storage +
+            (index * logger->config.field_capacity * logger->config.field_value_capacity);
     }
     return MP_LOG_STATUS_OK;
 }
@@ -248,6 +503,51 @@ mp_log_status_t mp_logger_add_owned_stream(mp_logger_t *logger, const mp_logger_
         mp_logger_level_range_mask(stream->minimum_level, stream->maximum_level));
     (void)pthread_mutex_unlock(&logger->stream_mutex);
     return MP_LOG_STATUS_OK;
+}
+
+mp_log_field_t mp_log_field_string(const char *key, const char *value) {
+    mp_log_field_t field;
+    memset(&field, 0, sizeof(field));
+    field.key = key;
+    field.type = MP_LOG_FIELD_STRING;
+    field.value.string_value = value;
+    return field;
+}
+
+mp_log_field_t mp_log_field_bool(const char *key, bool value) {
+    mp_log_field_t field;
+    memset(&field, 0, sizeof(field));
+    field.key = key;
+    field.type = MP_LOG_FIELD_BOOL;
+    field.value.bool_value = value;
+    return field;
+}
+
+mp_log_field_t mp_log_field_int64(const char *key, int64_t value) {
+    mp_log_field_t field;
+    memset(&field, 0, sizeof(field));
+    field.key = key;
+    field.type = MP_LOG_FIELD_INT64;
+    field.value.int64_value = value;
+    return field;
+}
+
+mp_log_field_t mp_log_field_uint64(const char *key, uint64_t value) {
+    mp_log_field_t field;
+    memset(&field, 0, sizeof(field));
+    field.key = key;
+    field.type = MP_LOG_FIELD_UINT64;
+    field.value.uint64_value = value;
+    return field;
+}
+
+mp_log_field_t mp_log_field_float64(const char *key, double value) {
+    mp_log_field_t field;
+    memset(&field, 0, sizeof(field));
+    field.key = key;
+    field.type = MP_LOG_FIELD_FLOAT64;
+    field.value.float64_value = value;
+    return field;
 }
 
 const char *mp_log_level_name(mp_log_level_t level) {
@@ -324,6 +624,8 @@ mp_log_status_t mp_logger_create(const mp_logger_config_t *config, mp_logger_t *
     logger->render_capacity =
         normalized_config.message_capacity +
         normalized_config.context_capacity +
+        (normalized_config.field_capacity *
+            (normalized_config.field_key_capacity + normalized_config.field_value_capacity + 64u)) +
         MP_LOGGER_RENDER_PADDING;
     mp_logger_make_run_suffix(logger->run_suffix, sizeof(logger->run_suffix));
     atomic_init(&logger->queued_records_total, 0u);
@@ -403,19 +705,22 @@ mp_log_status_t mp_logger_start(mp_logger_t *logger) {
     return MP_LOG_STATUS_OK;
 }
 
-/*
- * The producer path uses trylock so callers never block behind worker activity or slow sinks.
- * Once admitted, the record is copied into preallocated slot storage and the worker is signaled.
- */
-mp_log_status_t mp_logger_log(
+static mp_log_status_t mp_logger_enqueue_record(
     mp_logger_t *logger,
     mp_log_level_t level,
     const char *message,
-    const char *context_text) {
+    const char *context_text,
+    const mp_log_field_t *fields,
+    size_t field_count) {
     mp_log_slot_t *slot = NULL;
-    size_t ignored_length = 0;
+    mp_log_status_t field_status = MP_LOG_STATUS_OK;
     if (logger == NULL || message == NULL) {
         return MP_LOG_STATUS_INVALID_ARGUMENT;
+    }
+
+    field_status = mp_logger_validate_fields(logger, fields, field_count);
+    if (field_status != MP_LOG_STATUS_OK) {
+        return field_status;
     }
     if (logger->shutdown_requested) {
         return MP_LOG_STATUS_NOT_RUNNING;
@@ -444,18 +749,38 @@ mp_log_status_t mp_logger_log(
         logger->config.context_capacity,
         context_text == NULL ? "" : context_text,
         &slot->context_length);
-    if (message != NULL && strlen(message) >= logger->config.message_capacity) {
-        ignored_length++;
-    }
-    if (context_text != NULL && strlen(context_text) >= logger->config.context_capacity) {
-        ignored_length++;
-    }
+    mp_logger_copy_fields_to_slot(logger, slot, fields, field_count);
     logger->queue_tail = (logger->queue_tail + 1u) % logger->config.buffer_capacity;
     logger->queue_count++;
     (void)pthread_mutex_unlock(&logger->queue_mutex);
     (void)pthread_cond_signal(&logger->queue_cond);
-    (void)ignored_length;
     return MP_LOG_STATUS_OK;
+}
+
+/*
+ * The producer path uses trylock so callers never block behind worker activity or slow sinks.
+ * Once admitted, the record is copied into preallocated slot storage and the worker is signaled.
+ */
+mp_log_status_t mp_logger_log(
+    mp_logger_t *logger,
+    mp_log_level_t level,
+    const char *message,
+    const char *context_text) {
+    return mp_logger_enqueue_record(logger, level, message, context_text, NULL, 0u);
+}
+
+/*
+ * Structured field admission shares the same bounded queue path as plain logs while validating
+ * field keys and types before producers contend for queue access.
+ */
+mp_log_status_t mp_logger_log_fields(
+    mp_logger_t *logger,
+    mp_log_level_t level,
+    const char *message,
+    const char *context_text,
+    const mp_log_field_t *fields,
+    size_t field_count) {
+    return mp_logger_enqueue_record(logger, level, message, context_text, fields, field_count);
 }
 
 /*
@@ -570,5 +895,8 @@ void mp_logger_destroy(mp_logger_t *logger) {
     free(logger->slots);
     free(logger->message_storage);
     free(logger->context_storage);
+    free(logger->field_storage);
+    free(logger->field_key_storage);
+    free(logger->field_string_storage);
     free(logger);
 }
