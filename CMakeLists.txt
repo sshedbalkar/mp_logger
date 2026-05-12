@@ -7,6 +7,10 @@ include(CMakePackageConfigHelpers)
 
 find_package(Threads REQUIRED)
 
+function(mp_logger_enable_warnings target_name)
+  target_compile_options(${target_name} PRIVATE -Wall -Wextra -Wpedantic)
+endfunction()
+
 add_library(mp_logger
   src/mp_logger.c
   src/mp_logger_bootstrap.c
@@ -22,7 +26,7 @@ target_include_directories(mp_logger
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 target_link_libraries(mp_logger PUBLIC Threads::Threads)
-target_compile_options(mp_logger PRIVATE -Wall -Wextra -Wpedantic)
+mp_logger_enable_warnings(mp_logger)
 set_target_properties(mp_logger PROPERTIES
   OUTPUT_NAME mp_logger
   POSITION_INDEPENDENT_CODE ON
@@ -33,6 +37,7 @@ if(MP_LOGGER_BUILD_TESTS)
   enable_testing()
   add_executable(mp_logger_tests tests/mp_logger_tests.c)
   target_link_libraries(mp_logger_tests PRIVATE mp_logger)
+  mp_logger_enable_warnings(mp_logger_tests)
   add_test(NAME mp_logger COMMAND mp_logger_tests)
 endif()
 
@@ -41,6 +46,7 @@ if(MP_LOGGER_BUILD_BENCHMARKS)
   add_executable(mp_logger_benchmarks tests/mp_logger_benchmarks.c)
   target_include_directories(mp_logger_benchmarks PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
   target_link_libraries(mp_logger_benchmarks PRIVATE mp_logger)
+  mp_logger_enable_warnings(mp_logger_benchmarks)
 endif()
 
 configure_package_config_file(
