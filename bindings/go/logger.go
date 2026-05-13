@@ -140,6 +140,7 @@ type Stats struct {
 	ActiveStreamCount int
 }
 
+// fieldKind tracks which union member of Field is populated before cgo conversion.
 type fieldKind uint8
 
 const (
@@ -353,6 +354,7 @@ func (logger *Logger) Close() {
 	}
 }
 
+// toC validates Config and copies it into the C struct layout expected by mp_logger_create.
 func (config Config) toC() (C.mp_logger_config_t, error) {
 	var out C.mp_logger_config_t
 	var err error
@@ -417,6 +419,7 @@ func (config Config) toC() (C.mp_logger_config_t, error) {
 	return out, nil
 }
 
+// configFromC converts a C config snapshot into the Go wrapper type.
 func configFromC(config C.mp_logger_config_t) Config {
 	return Config{
 		ServiceName:          readCString(&config.service_name[0]),
@@ -446,6 +449,7 @@ func configFromC(config C.mp_logger_config_t) Config {
 	}
 }
 
+// statusError maps a non-OK C status into the Go error surface.
 func statusError(op string, status C.mp_log_status_t) error {
 	if status == C.MP_LOG_STATUS_OK {
 		return nil
@@ -456,6 +460,7 @@ func statusError(op string, status C.mp_log_status_t) error {
 	}
 }
 
+// fieldsToC materializes the temporary C allocations needed for one LogFields call.
 func fieldsToC(fields []Field) (*C.mp_log_field_t, []unsafe.Pointer, error) {
 	if len(fields) == 0 {
 		return nil, nil, nil
@@ -500,16 +505,19 @@ func fieldsToC(fields []Field) (*C.mp_log_field_t, []unsafe.Pointer, error) {
 	return base, allocations, nil
 }
 
+// freeAllocations releases the temporary C strings created for a LogFields call.
 func freeAllocations(allocations []unsafe.Pointer) {
 	for _, allocation := range allocations {
 		C.free(allocation)
 	}
 }
 
+// readCString copies a NUL-terminated C string into Go.
 func readCString(value *C.char) string {
 	return C.GoString(value)
 }
 
+// writeCString copies one Go string into a fixed-capacity C char array.
 func writeCString(dst *C.char, capacity int, value string, field string) error {
 	if capacity <= 0 {
 		return fmt.Errorf("%s has invalid capacity", field)
@@ -523,6 +531,7 @@ func writeCString(dst *C.char, capacity int, value string, field string) error {
 	return nil
 }
 
+// durationToMillis converts a Go duration into the uint32 millisecond range used by the C API.
 func durationToMillis(timeout time.Duration) (C.uint32_t, error) {
 	if timeout < 0 {
 		return 0, fmt.Errorf("timeout must be non-negative")
@@ -534,6 +543,7 @@ func durationToMillis(timeout time.Duration) (C.uint32_t, error) {
 	return C.uint32_t(timeoutMillis), nil
 }
 
+// toSize rejects negative Go ints before they are cast to C.size_t.
 func toSize(value int, field string) (C.size_t, error) {
 	if value < 0 {
 		return 0, fmt.Errorf("%s must be non-negative", field)
@@ -541,6 +551,7 @@ func toSize(value int, field string) (C.size_t, error) {
 	return C.size_t(value), nil
 }
 
+// withPtr guards logger pointer access and maps the resulting C status into an error.
 func (logger *Logger) withPtr(op string, call func(*C.mp_logger_t) C.mp_log_status_t) error {
 	logger.mu.RLock()
 	defer logger.mu.RUnlock()

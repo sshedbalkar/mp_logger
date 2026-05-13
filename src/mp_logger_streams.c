@@ -13,6 +13,7 @@
 #include <time.h>
 #include <unistd.h>
 
+/* Append one character to a bounded render buffer while still tracking full logical length. */
 static size_t mp_logger_append_char(char *buffer, size_t capacity, size_t used, char value) {
     if (capacity > 0 && used + 1 < capacity) {
         buffer[used] = value;
@@ -20,6 +21,7 @@ static size_t mp_logger_append_char(char *buffer, size_t capacity, size_t used, 
     return used + 1;
 }
 
+/* Append one NUL-terminated string to a bounded render buffer. */
 static size_t mp_logger_append_string(
     char *buffer,
     size_t capacity,
@@ -36,6 +38,7 @@ static size_t mp_logger_append_string(
     return used;
 }
 
+/* Copy one path component into a bounded destination while tracking the next offset. */
 static int mp_logger_copy_component(
     char *buffer,
     size_t buffer_capacity,
@@ -138,6 +141,7 @@ static size_t mp_logger_append_text_escaped(
     return used;
 }
 
+/* Render one structured field value using JSON-native typing rules. */
 static size_t mp_logger_append_json_field_value(
     char *buffer,
     size_t capacity,
@@ -180,6 +184,7 @@ static size_t mp_logger_append_json_field_value(
     return used;
 }
 
+/* Render one structured field value for the single-line text format. */
 static size_t mp_logger_append_text_field_value(
     char *buffer,
     size_t capacity,
@@ -222,6 +227,7 @@ static size_t mp_logger_append_text_field_value(
     return used;
 }
 
+/* Clamp the logical length to capacity and terminate the rendered buffer. */
 static void mp_logger_finalize_buffer(char *buffer, size_t capacity, size_t used) {
     if (buffer == NULL || capacity == 0) {
         return;
@@ -278,6 +284,7 @@ static int mp_logger_make_stream_path(
     return 1;
 }
 
+/* Write one rendered entry plus newline to the file sink. */
 static mp_log_status_t mp_logger_write_file_stream(
     void *stream_context,
     const mp_log_record_t *record,
@@ -299,6 +306,7 @@ static mp_log_status_t mp_logger_write_file_stream(
     return MP_LOG_STATUS_OK;
 }
 
+/* Flush, close, and free one owned file sink state object. */
 static void mp_logger_destroy_file_stream(void *stream_context) {
     mp_file_stream_state_t *state = (mp_file_stream_state_t *)stream_context;
     if (state == NULL) {
@@ -310,6 +318,7 @@ static void mp_logger_destroy_file_stream(void *stream_context) {
     free(state);
 }
 
+/* Send one rendered entry as a UDP datagram to the configured endpoint. */
 static mp_log_status_t mp_logger_write_udp_stream(
     void *stream_context,
     const mp_log_record_t *record,
@@ -334,6 +343,7 @@ static mp_log_status_t mp_logger_write_udp_stream(
     return MP_LOG_STATUS_OK;
 }
 
+/* Close and free one owned UDP sink state object. */
 static void mp_logger_destroy_udp_stream(void *stream_context) {
     mp_udp_stream_state_t *state = (mp_udp_stream_state_t *)stream_context;
     if (state == NULL) {
@@ -346,6 +356,7 @@ static void mp_logger_destroy_udp_stream(void *stream_context) {
 }
 
 /* Wrap stdout and stderr in the same file-stream callback shape used by regular file sinks. */
+/* Materialize a stdout or stderr stream descriptor from the configured level bounds. */
 static mp_log_status_t mp_logger_make_stdio_stream(
     const char *name,
     FILE *file_handle,
@@ -374,6 +385,7 @@ static mp_log_status_t mp_logger_make_stdio_stream(
 }
 
 /* Create a per-run file sink after sanitizing the configured prefix and ensuring the directory exists. */
+/* Open the configured file sink and wrap it in an owned stream descriptor. */
 static mp_log_status_t mp_logger_make_file_stream(
     mp_logger_t *logger,
     mp_logger_stream_t *out_stream) {
@@ -419,6 +431,7 @@ static mp_log_status_t mp_logger_make_file_stream(
 }
 
 /* Resolve the configured UDP endpoint once during startup and keep the socket state in the stream context. */
+/* Resolve the configured UDP endpoint and wrap it in an owned stream descriptor. */
 static mp_log_status_t mp_logger_make_udp_stream(
     const mp_logger_t *logger,
     mp_logger_stream_t *out_stream) {

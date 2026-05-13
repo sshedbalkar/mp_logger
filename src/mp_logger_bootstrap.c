@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Compare two ASCII configuration tokens case-insensitively. */
 static int mp_logger_equal_ignore_case(const char *left, const char *right) {
     size_t index = 0;
     if (left == NULL || right == NULL) {
@@ -20,6 +21,7 @@ static int mp_logger_equal_ignore_case(const char *left, const char *right) {
     return left[index] == '\0' && right[index] == '\0';
 }
 
+/* Parse the accepted boolean spellings used by bootstrap config. */
 static int mp_logger_parse_bool(const char *value, int *out_bool) {
     if (value == NULL || out_bool == NULL) {
         return 0;
@@ -37,6 +39,7 @@ static int mp_logger_parse_bool(const char *value, int *out_bool) {
     return 0;
 }
 
+/* Parse one non-negative decimal size value from bootstrap config. */
 static int mp_logger_parse_size_value(const char *value, size_t *out_size) {
     char *end = NULL;
     unsigned long long parsed = 0;
@@ -52,6 +55,7 @@ static int mp_logger_parse_size_value(const char *value, size_t *out_size) {
     return 1;
 }
 
+/* Parse one UDP port value while enforcing the uint16 range. */
 static int mp_logger_parse_port_value(const char *value, uint16_t *out_port) {
     size_t parsed = 0;
     if (value == NULL || out_port == NULL) {
@@ -93,6 +97,7 @@ void mp_logger_copy_trimmed(char *dest, size_t dest_capacity, const char *src) {
     dest[length] = '\0';
 }
 
+/* Apply root-level service metadata keys. */
 static mp_log_status_t mp_logger_apply_root_value(
     const char *key,
     const char *value,
@@ -189,6 +194,7 @@ static mp_log_status_t mp_logger_apply_logger_value(
     return MP_LOG_STATUS_CONFIG_ERROR;
 }
 
+/* Apply stdout stream level bounds from bootstrap config. */
 static mp_log_status_t mp_logger_apply_stdout_value(
     const char *key,
     const char *value,
@@ -202,6 +208,7 @@ static mp_log_status_t mp_logger_apply_stdout_value(
     return MP_LOG_STATUS_CONFIG_ERROR;
 }
 
+/* Apply stderr stream level bounds from bootstrap config. */
 static mp_log_status_t mp_logger_apply_stderr_value(
     const char *key,
     const char *value,
@@ -215,6 +222,7 @@ static mp_log_status_t mp_logger_apply_stderr_value(
     return MP_LOG_STATUS_CONFIG_ERROR;
 }
 
+/* Apply file stream level bounds from bootstrap config. */
 static mp_log_status_t mp_logger_apply_file_value(
     const char *key,
     const char *value,
@@ -228,6 +236,7 @@ static mp_log_status_t mp_logger_apply_file_value(
     return MP_LOG_STATUS_CONFIG_ERROR;
 }
 
+/* Apply UDP stream destination and level bounds from bootstrap config. */
 static mp_log_status_t mp_logger_apply_udp_value(
     const char *key,
     const char *value,

@@ -80,6 +80,12 @@ worker thread
 - Keep queue pressure observable both through stats counters and backup warning lines.
 - Keep custom stream latency off the producer path, but document that slow custom streams still block the single worker thread.
 
+## Commenting Rules
+
+- Keep public declarations in `include/mp_logger.h` documented with sentence-first comments placed directly above the declaration.
+- Keep non-trivial internal structs and helper functions in `src/` documented with the same format so queueing, rendering, and sink lifecycle behavior stay reviewable.
+- Keep comments focused on contract, ownership, lifetime, bounds, and concurrency behavior when those details are not obvious from the signature alone.
+
 ## Validation Rules
 
 - Keep unit tests covering bootstrap overrides, structured field rendering, pre-start saturation, custom stream rendering, file output, backup warning emission, and stream-limit enforcement.

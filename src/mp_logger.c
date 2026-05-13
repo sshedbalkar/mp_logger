@@ -10,6 +10,7 @@
 #include <string.h>
 #include <time.h>
 
+/* Read the monotonic clock used for worker deadlines and flush timeouts. */
 static int64_t mp_logger_now_monotonic_millis(void) {
     struct timespec now;
     if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
@@ -18,6 +19,7 @@ static int64_t mp_logger_now_monotonic_millis(void) {
     return (int64_t)now.tv_sec * 1000 + (int64_t)(now.tv_nsec / 1000000);
 }
 
+/* Build the UTC timestamp suffix shared by this logger instance's output files. */
 static void mp_logger_make_run_suffix(char *buffer, size_t buffer_capacity) {
     struct tm utc_time;
     time_t now_seconds = (time_t)(mp_logger_now_millis() / 1000);
@@ -34,6 +36,7 @@ static void mp_logger_make_run_suffix(char *buffer, size_t buffer_capacity) {
     }
 }
 
+/* Reserve built-in rendered record keys so user fields cannot shadow them. */
 static int mp_logger_is_reserved_field_key(const char *key) {
     static const char *const reserved_keys[] = {
         "ts",
@@ -56,6 +59,7 @@ static int mp_logger_is_reserved_field_key(const char *key) {
     return 0;
 }
 
+/* Validate field keys against the supported character set and reserved names. */
 static int mp_logger_is_valid_field_key(const char *key) {
     size_t index = 0;
     if (key == NULL || key[0] == '\0' || mp_logger_is_reserved_field_key(key)) {
@@ -71,6 +75,7 @@ static int mp_logger_is_valid_field_key(const char *key) {
     return 1;
 }
 
+/* Validate field count, key uniqueness, and type-specific bounds before enqueue. */
 static mp_log_status_t mp_logger_validate_fields(
     const mp_logger_t *logger,
     const mp_log_field_t *fields,
@@ -122,6 +127,7 @@ static mp_log_status_t mp_logger_validate_fields(
     return MP_LOG_STATUS_OK;
 }
 
+/* Copy caller-supplied field metadata into one owned queue slot. */
 static void mp_logger_copy_fields_to_slot(
     const mp_logger_t *logger,
     mp_log_slot_t *slot,
@@ -170,6 +176,7 @@ static void mp_logger_copy_fields_to_slot(
     }
 }
 
+/* Rehydrate one queue slot into worker-local scratch buffers before sink delivery. */
 static void mp_logger_copy_record_from_slot(
     const mp_logger_t *logger,
     const mp_log_slot_t *slot,
@@ -281,6 +288,7 @@ static void mp_logger_flush_drop_counters(
  * Dequeue into thread-local scratch buffers before invoking streams so callbacks never observe
  * queue storage that is about to be reused by producers.
  */
+/* Drain queued records, render them once, and fan them out to every active stream. */
 static void *mp_logger_worker_main(void *context) {
     mp_logger_t *logger = (mp_logger_t *)context;
     char *message_buffer = NULL;
@@ -402,6 +410,7 @@ static void *mp_logger_worker_main(void *context) {
     return NULL;
 }
 
+/* Reject impossible or unsafe logger configurations before allocation begins. */
 static int mp_logger_validate_config(const mp_logger_config_t *config) {
     if (config == NULL) {
         return 0;
@@ -420,6 +429,7 @@ static int mp_logger_validate_config(const mp_logger_config_t *config) {
 }
 
 /* Allocate one contiguous queue slot array plus per-slot message and context backing storage. */
+/* Allocate and partition the bounded queue storage derived from logger->config. */
 static mp_log_status_t mp_logger_allocate_buffers(mp_logger_t *logger) {
     size_t index = 0;
     logger->slots = (mp_log_slot_t *)calloc(logger->config.buffer_capacity, sizeof(mp_log_slot_t));
@@ -463,6 +473,7 @@ static mp_log_status_t mp_logger_allocate_buffers(mp_logger_t *logger) {
     return MP_LOG_STATUS_OK;
 }
 
+/* Build a bitmask for the inclusive [minimum, maximum] level range. */
 static uint_fast32_t mp_logger_level_range_mask(
     mp_log_level_t minimum_level,
     mp_log_level_t maximum_level) {
@@ -705,6 +716,7 @@ mp_log_status_t mp_logger_start(mp_logger_t *logger) {
     return MP_LOG_STATUS_OK;
 }
 
+/* Try to stage one record into the bounded queue without blocking on sink I/O. */
 static mp_log_status_t mp_logger_enqueue_record(
     mp_logger_t *logger,
     mp_log_level_t level,
