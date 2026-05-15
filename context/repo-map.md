@@ -13,6 +13,7 @@
 
 - `bindings/go/logger.go`: cgo wrapper that exposes logger creation, lifecycle, plain logging, structured-field logging, and stats to Go callers.
 - `bindings/go/logger_test.go`: Go coverage for defaults, bootstrap loading, lifecycle, structured fields, and file-backed output.
+- `bindings/go/testtmp_test.go`: Go test helper that keeps wrapper temp directories under the parent repo-root `.tmp/` tree.
 - `bindings/go/README.md`: Go binding usage, scope, and cgo requirements.
 - `src/mp_logger.c`: lifecycle, queueing, structured field storage, worker, and shutdown.
 - `src/mp_logger_bootstrap.c`: bootstrap config loading and documented defaults.
