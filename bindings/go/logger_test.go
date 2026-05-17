@@ -32,7 +32,7 @@ func TestDefaultConfigMatchesCLibraryDefaults(t *testing.T) {
 }
 
 func TestCreateStartLogFlushShutdown(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := repoTempDir(t)
 	config := DefaultConfig()
 	config.ActiveStreams = streamFile
 	config.LogDirectory = tempDir
@@ -92,7 +92,7 @@ func TestCreateStartLogFlushShutdown(t *testing.T) {
 }
 
 func TestLoadBootstrapConfigAndCreateFromBootstrap(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := repoTempDir(t)
 	configPath := filepath.Join(tempDir, "logger.ini")
 	configText := strings.Join([]string{
 		configKeyServiceName + " = go-bootstrap",
@@ -170,7 +170,7 @@ func TestCreateRejectsTooLongNames(t *testing.T) {
 }
 
 func TestLogFieldsRendersStructuredValues(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := repoTempDir(t)
 	config := DefaultConfig()
 	config.ActiveStreams = streamFile
 	config.LogDirectory = tempDir

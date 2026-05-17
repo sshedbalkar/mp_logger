@@ -116,6 +116,7 @@ for path in \
   bindings/go/doc.go \
   bindings/go/logger.go \
   bindings/go/logger_test.go \
+  bindings/go/testtmp_test.go \
   bindings/go/c_mp_logger.c \
   bindings/go/c_mp_logger_bootstrap.c \
   bindings/go/c_mp_logger_streams.c \
@@ -156,6 +157,7 @@ require_contains "constants.status-names" include/mp_logger_constants.h "MP_LOGG
 require_contains "cmake.ctest" CMakeLists.txt "add_test(NAME mp_logger" "CMake registers a CTest target"
 require_contains "cmake.bench" CMakeLists.txt "add_executable(mp_logger_benchmarks" "CMake builds the benchmark target"
 require_contains "test.go-wrapper" scripts/test.sh "go test ./..." "test script runs Go wrapper tests"
+require_contains "test.tmp-root" scripts/test.sh "../../.tmp" "test script routes temp files into the parent repo .tmp tree"
 require_contains "agents.read-order" AGENTS.md "Read order:" "AGENTS defines bootstrap read order"
 require_contains "agents.commit-format" AGENTS.md "docs/commit-messages.md" "AGENTS routes commit format to local source"
 require_contains "agents.commit-validator" AGENTS.md "./scripts/validate-commit-message.sh" "AGENTS requires commit message validation before commit"
@@ -234,6 +236,18 @@ require_absent_regex \
   '"(mp-service|development|stdout,stderr,file|service_name|environment_name|buffer_capacity|message_capacity|context_capacity|field_capacity|field_key_capacity|field_value_capacity|pretty_output|log_directory|file_name_prefix|backup_file_name_prefix|active_streams|minimum_level|maximum_level|127\.0\.0\.1|QUEUE_FULL|INVALID_ARGUMENT|LIMIT_EXCEEDED|1970-01-01T00:00:00\.000Z)"' \
   "durable literals from the constants registry are not duplicated in executable code, tests, or scripts" \
   include src tests bindings/go scripts
+
+if rg -n '/tmp/|\$\{TMPDIR:-/tmp\}' README.md bindings/go scripts -g '!scripts/validate-static.sh' >/dev/null; then
+  fail "temp.no-os-temp-root" "logger module avoids OS temp roots for repo-local scratch" "found an OS temp-root reference"
+else
+  pass "temp.no-os-temp-root" "logger module avoids OS temp roots for repo-local scratch" "README.md bindings/go scripts"
+fi
+
+if rg -n 't\.TempDir\(' bindings/go -g '!bindings/go/testtmp_test.go' >/dev/null; then
+  fail "temp.no-bare-tempdir" "logger Go tests use repo temp helpers instead of bare t.TempDir()" "found direct t.TempDir() usage outside the helper"
+else
+  pass "temp.no-bare-tempdir" "logger Go tests use repo temp helpers instead of bare t.TempDir()" "bindings/go"
+fi
 
 score="$(awk -v passed="$passed" -v total="$total" 'BEGIN { if (total == 0) print "0.0"; else printf "%.1f", (passed / total) * 100 }')"
 status="PASS"
