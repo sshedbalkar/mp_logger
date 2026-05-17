@@ -87,7 +87,7 @@ static size_t mp_logger_append_json_escaped(
             break;
         default:
             if (current < 0x20u) {
-                char escape[7];
+                char escape[MP_LOGGER_JSON_UNICODE_ESCAPE_CAPACITY];
                 (void)snprintf(escape, sizeof(escape), "\\u%04x", current);
                 used = mp_logger_append_string(buffer, capacity, used, escape);
             } else {
@@ -141,13 +141,24 @@ static size_t mp_logger_append_text_escaped(
     return used;
 }
 
+/* Append one rendered JSON object key from the centralized key registry. */
+static size_t mp_logger_append_json_key(
+    char *buffer,
+    size_t capacity,
+    size_t used,
+    const char *key) {
+    used = mp_logger_append_char(buffer, capacity, used, '"');
+    used = mp_logger_append_string(buffer, capacity, used, key);
+    return mp_logger_append_char(buffer, capacity, used, '"');
+}
+
 /* Render one structured field value using JSON-native typing rules. */
 static size_t mp_logger_append_json_field_value(
     char *buffer,
     size_t capacity,
     size_t used,
     const mp_log_field_t *field) {
-    char number_text[64];
+    char number_text[MP_LOGGER_NUMBER_TEXT_CAPACITY];
     if (field == NULL) {
         return used;
     }
@@ -190,7 +201,7 @@ static size_t mp_logger_append_text_field_value(
     size_t capacity,
     size_t used,
     const mp_log_field_t *field) {
-    char number_text[64];
+    char number_text[MP_LOGGER_NUMBER_TEXT_CAPACITY];
     if (field == NULL) {
         return used;
     }
@@ -250,33 +261,34 @@ static int mp_logger_make_stream_path(
     if (buffer == NULL || directory == NULL || prefix == NULL || run_suffix == NULL) {
         return 0;
     }
-    if (strcmp(directory, ".") == 0) {
-        required_length = strlen(prefix) + 1u + strlen(run_suffix) + 4u;
+    if (strcmp(directory, MP_LOGGER_DEFAULT_LOG_DIRECTORY) == 0) {
+        required_length = strlen(prefix) + 1u + strlen(run_suffix) + strlen(MP_LOGGER_FILE_EXTENSION);
         if (required_length >= buffer_capacity) {
             buffer[0] = '\0';
             return 0;
         }
         if (!mp_logger_copy_component(buffer, buffer_capacity, &offset, prefix) ||
-            !mp_logger_copy_component(buffer, buffer_capacity, &offset, ".") ||
+            !mp_logger_copy_component(buffer, buffer_capacity, &offset, MP_LOGGER_DEFAULT_LOG_DIRECTORY) ||
             !mp_logger_copy_component(buffer, buffer_capacity, &offset, run_suffix) ||
-            !mp_logger_copy_component(buffer, buffer_capacity, &offset, ".log")) {
+            !mp_logger_copy_component(buffer, buffer_capacity, &offset, MP_LOGGER_FILE_EXTENSION)) {
             buffer[0] = '\0';
             return 0;
         }
         buffer[offset] = '\0';
         return 1;
     }
-    required_length = strlen(directory) + 1u + strlen(prefix) + 1u + strlen(run_suffix) + 4u;
+    required_length =
+        strlen(directory) + 1u + strlen(prefix) + 1u + strlen(run_suffix) + strlen(MP_LOGGER_FILE_EXTENSION);
     if (required_length >= buffer_capacity) {
         buffer[0] = '\0';
         return 0;
     }
     if (!mp_logger_copy_component(buffer, buffer_capacity, &offset, directory) ||
-        !mp_logger_copy_component(buffer, buffer_capacity, &offset, "/") ||
+        !mp_logger_copy_component(buffer, buffer_capacity, &offset, MP_LOGGER_PATH_SEPARATOR) ||
         !mp_logger_copy_component(buffer, buffer_capacity, &offset, prefix) ||
         !mp_logger_copy_component(buffer, buffer_capacity, &offset, ".") ||
         !mp_logger_copy_component(buffer, buffer_capacity, &offset, run_suffix) ||
-        !mp_logger_copy_component(buffer, buffer_capacity, &offset, ".log")) {
+        !mp_logger_copy_component(buffer, buffer_capacity, &offset, MP_LOGGER_FILE_EXTENSION)) {
         buffer[0] = '\0';
         return 0;
     }
@@ -413,7 +425,7 @@ static mp_log_status_t mp_logger_make_file_stream(
         free(state);
         return MP_LOG_STATUS_IO_ERROR;
     }
-    state->file_handle = fopen(state->path, "a");
+    state->file_handle = fopen(state->path, MP_LOGGER_FILE_APPEND_MODE);
     if (state->file_handle == NULL) {
         free(state);
         return MP_LOG_STATUS_IO_ERROR;
@@ -421,7 +433,7 @@ static mp_log_status_t mp_logger_make_file_stream(
     state->close_on_destroy = 1;
 
     memset(out_stream, 0, sizeof(*out_stream));
-    mp_logger_copy_trimmed(out_stream->stream_name, sizeof(out_stream->stream_name), "file");
+    mp_logger_copy_trimmed(out_stream->stream_name, sizeof(out_stream->stream_name), MP_LOGGER_STREAM_FILE);
     out_stream->minimum_level = logger->config.file_min_level;
     out_stream->maximum_level = logger->config.file_max_level;
     out_stream->stream_context = state;
@@ -438,7 +450,7 @@ static mp_log_status_t mp_logger_make_udp_stream(
     mp_udp_stream_state_t *state = NULL;
     struct addrinfo hints;
     struct addrinfo *addresses = NULL;
-    char port_text[16];
+    char port_text[MP_LOGGER_UDP_PORT_TEXT_CAPACITY];
     int socket_fd = -1;
     if (logger == NULL || out_stream == NULL) {
         return MP_LOG_STATUS_INVALID_ARGUMENT;
@@ -478,7 +490,7 @@ static mp_log_status_t mp_logger_make_udp_stream(
     freeaddrinfo(addresses);
 
     memset(out_stream, 0, sizeof(*out_stream));
-    mp_logger_copy_trimmed(out_stream->stream_name, sizeof(out_stream->stream_name), "udp");
+    mp_logger_copy_trimmed(out_stream->stream_name, sizeof(out_stream->stream_name), MP_LOGGER_STREAM_UDP);
     out_stream->minimum_level = logger->config.udp_min_level;
     out_stream->maximum_level = logger->config.udp_max_level;
     out_stream->stream_context = state;
@@ -509,13 +521,13 @@ void mp_logger_format_timestamp(int64_t unix_epoch_millis, char *buffer, size_t 
     }
     memset(&utc_time, 0, sizeof(utc_time));
     if (gmtime_r(&seconds, &utc_time) == NULL) {
-        (void)snprintf(buffer, buffer_capacity, "1970-01-01T00:00:00.000Z");
+        (void)snprintf(buffer, buffer_capacity, "%s", MP_LOGGER_TIMESTAMP_EPOCH);
         return;
     }
     (void)snprintf(
         buffer,
         buffer_capacity,
-        "%04d-%02d-%02dT%02d:%02d:%02d.%03ldZ",
+        MP_LOGGER_TIMESTAMP_FORMAT,
         utc_time.tm_year + 1900,
         utc_time.tm_mon + 1,
         utc_time.tm_mday,
@@ -573,7 +585,7 @@ void mp_logger_sanitize_file_component(char *value) {
 
 int mp_logger_ensure_directory(const char *path) {
     struct stat info;
-    if (path == NULL || path[0] == '\0' || strcmp(path, ".") == 0) {
+    if (path == NULL || path[0] == '\0' || strcmp(path, MP_LOGGER_DEFAULT_LOG_DIRECTORY) == 0) {
         return 1;
     }
     if (stat(path, &info) == 0) {
@@ -617,13 +629,13 @@ size_t mp_logger_render_record(
         const char *separator = logger->config.pretty_output ? ", " : ",";
         const char *colon = logger->config.pretty_output ? ": " : ":";
         used = mp_logger_append_char(buffer, buffer_capacity, used, '{');
-        used = mp_logger_append_string(buffer, buffer_capacity, used, "\"ts\"");
+        used = mp_logger_append_json_key(buffer, buffer_capacity, used, MP_LOGGER_RENDER_KEY_TIMESTAMP);
         used = mp_logger_append_string(buffer, buffer_capacity, used, colon);
         used = mp_logger_append_char(buffer, buffer_capacity, used, '"');
         used = mp_logger_append_json_escaped(buffer, buffer_capacity, used, timestamp);
         used = mp_logger_append_char(buffer, buffer_capacity, used, '"');
         used = mp_logger_append_string(buffer, buffer_capacity, used, separator);
-        used = mp_logger_append_string(buffer, buffer_capacity, used, "\"level\"");
+        used = mp_logger_append_json_key(buffer, buffer_capacity, used, MP_LOGGER_RENDER_KEY_LEVEL);
         used = mp_logger_append_string(buffer, buffer_capacity, used, colon);
         used = mp_logger_append_char(buffer, buffer_capacity, used, '"');
         used = mp_logger_append_json_escaped(
@@ -633,7 +645,7 @@ size_t mp_logger_render_record(
             mp_log_level_name(record->level));
         used = mp_logger_append_char(buffer, buffer_capacity, used, '"');
         used = mp_logger_append_string(buffer, buffer_capacity, used, separator);
-        used = mp_logger_append_string(buffer, buffer_capacity, used, "\"service\"");
+        used = mp_logger_append_json_key(buffer, buffer_capacity, used, MP_LOGGER_RENDER_KEY_SERVICE);
         used = mp_logger_append_string(buffer, buffer_capacity, used, colon);
         used = mp_logger_append_char(buffer, buffer_capacity, used, '"');
         used = mp_logger_append_json_escaped(
@@ -643,7 +655,7 @@ size_t mp_logger_render_record(
             logger->config.service_name);
         used = mp_logger_append_char(buffer, buffer_capacity, used, '"');
         used = mp_logger_append_string(buffer, buffer_capacity, used, separator);
-        used = mp_logger_append_string(buffer, buffer_capacity, used, "\"environment\"");
+        used = mp_logger_append_json_key(buffer, buffer_capacity, used, MP_LOGGER_RENDER_KEY_ENVIRONMENT);
         used = mp_logger_append_string(buffer, buffer_capacity, used, colon);
         used = mp_logger_append_char(buffer, buffer_capacity, used, '"');
         used = mp_logger_append_json_escaped(
@@ -653,24 +665,24 @@ size_t mp_logger_render_record(
             logger->config.environment_name);
         used = mp_logger_append_char(buffer, buffer_capacity, used, '"');
         used = mp_logger_append_string(buffer, buffer_capacity, used, separator);
-        used = mp_logger_append_string(buffer, buffer_capacity, used, "\"sequence_id\"");
+        used = mp_logger_append_json_key(buffer, buffer_capacity, used, MP_LOGGER_RENDER_KEY_SEQUENCE_ID);
         used = mp_logger_append_string(buffer, buffer_capacity, used, colon);
         used = mp_logger_append_string(buffer, buffer_capacity, used, "\"");
         {
-            char sequence_text[32];
+            char sequence_text[MP_LOGGER_SEQUENCE_TEXT_CAPACITY];
             (void)snprintf(sequence_text, sizeof(sequence_text), "%llu", (unsigned long long)record->sequence_id);
             used = mp_logger_append_string(buffer, buffer_capacity, used, sequence_text);
         }
         used = mp_logger_append_string(buffer, buffer_capacity, used, "\"");
         used = mp_logger_append_string(buffer, buffer_capacity, used, separator);
-        used = mp_logger_append_string(buffer, buffer_capacity, used, "\"message\"");
+        used = mp_logger_append_json_key(buffer, buffer_capacity, used, MP_LOGGER_RENDER_KEY_MESSAGE);
         used = mp_logger_append_string(buffer, buffer_capacity, used, colon);
         used = mp_logger_append_char(buffer, buffer_capacity, used, '"');
         used = mp_logger_append_json_escaped(buffer, buffer_capacity, used, record->message);
         used = mp_logger_append_char(buffer, buffer_capacity, used, '"');
         if (record->context_text != NULL && record->context_text[0] != '\0') {
             used = mp_logger_append_string(buffer, buffer_capacity, used, separator);
-            used = mp_logger_append_string(buffer, buffer_capacity, used, "\"context\"");
+            used = mp_logger_append_json_key(buffer, buffer_capacity, used, MP_LOGGER_RENDER_KEY_CONTEXT);
             used = mp_logger_append_string(buffer, buffer_capacity, used, colon);
             used = mp_logger_append_char(buffer, buffer_capacity, used, '"');
             used = mp_logger_append_json_escaped(
@@ -695,35 +707,47 @@ size_t mp_logger_render_record(
         used = mp_logger_append_char(buffer, buffer_capacity, used, '}');
     } else {
         used = mp_logger_append_string(buffer, buffer_capacity, used, timestamp);
-        used = mp_logger_append_string(buffer, buffer_capacity, used, " level=");
+        used = mp_logger_append_string(buffer, buffer_capacity, used, " ");
+        used = mp_logger_append_string(buffer, buffer_capacity, used, MP_LOGGER_RENDER_KEY_LEVEL);
+        used = mp_logger_append_string(buffer, buffer_capacity, used, "=");
         used = mp_logger_append_string(
             buffer,
             buffer_capacity,
             used,
             mp_log_level_name(record->level));
-        used = mp_logger_append_string(buffer, buffer_capacity, used, " service=\"");
+        used = mp_logger_append_string(buffer, buffer_capacity, used, " ");
+        used = mp_logger_append_string(buffer, buffer_capacity, used, MP_LOGGER_RENDER_KEY_SERVICE);
+        used = mp_logger_append_string(buffer, buffer_capacity, used, "=\"");
         used = mp_logger_append_text_escaped(
             buffer,
             buffer_capacity,
             used,
             logger->config.service_name);
-        used = mp_logger_append_string(buffer, buffer_capacity, used, "\" environment=\"");
+        used = mp_logger_append_string(buffer, buffer_capacity, used, "\" ");
+        used = mp_logger_append_string(buffer, buffer_capacity, used, MP_LOGGER_RENDER_KEY_ENVIRONMENT);
+        used = mp_logger_append_string(buffer, buffer_capacity, used, "=\"");
         used = mp_logger_append_text_escaped(
             buffer,
             buffer_capacity,
             used,
             logger->config.environment_name);
-        used = mp_logger_append_string(buffer, buffer_capacity, used, "\" sequence_id=\"");
+        used = mp_logger_append_string(buffer, buffer_capacity, used, "\" ");
+        used = mp_logger_append_string(buffer, buffer_capacity, used, MP_LOGGER_RENDER_KEY_SEQUENCE_ID);
+        used = mp_logger_append_string(buffer, buffer_capacity, used, "=\"");
         {
-            char sequence_text[32];
+            char sequence_text[MP_LOGGER_SEQUENCE_TEXT_CAPACITY];
             (void)snprintf(sequence_text, sizeof(sequence_text), "%llu", (unsigned long long)record->sequence_id);
             used = mp_logger_append_string(buffer, buffer_capacity, used, sequence_text);
         }
-        used = mp_logger_append_string(buffer, buffer_capacity, used, "\" message=\"");
+        used = mp_logger_append_string(buffer, buffer_capacity, used, "\" ");
+        used = mp_logger_append_string(buffer, buffer_capacity, used, MP_LOGGER_RENDER_KEY_MESSAGE);
+        used = mp_logger_append_string(buffer, buffer_capacity, used, "=\"");
         used = mp_logger_append_text_escaped(buffer, buffer_capacity, used, record->message);
         used = mp_logger_append_char(buffer, buffer_capacity, used, '"');
         if (record->context_text != NULL && record->context_text[0] != '\0') {
-            used = mp_logger_append_string(buffer, buffer_capacity, used, " context=\"");
+            used = mp_logger_append_string(buffer, buffer_capacity, used, " ");
+            used = mp_logger_append_string(buffer, buffer_capacity, used, MP_LOGGER_RENDER_KEY_CONTEXT);
+            used = mp_logger_append_string(buffer, buffer_capacity, used, "=\"");
             used = mp_logger_append_text_escaped(
                 buffer,
                 buffer_capacity,
@@ -789,7 +813,7 @@ void mp_logger_backup_close(mp_logger_t *logger) {
 
 /* Serialize backup writes because worker and producer-side warning paths can race each other. */
 void mp_logger_backup_write(mp_logger_t *logger, const char *severity, const char *message) {
-    char line[512];
+    char line[MP_LOGGER_BACKUP_LINE_CAPACITY];
     char timestamp[MP_LOGGER_TIMESTAMP_CAPACITY];
     size_t length = 0;
     if (logger == NULL || severity == NULL || message == NULL) {
@@ -802,9 +826,10 @@ void mp_logger_backup_write(mp_logger_t *logger, const char *severity, const cha
     (void)snprintf(
         line,
         sizeof(line),
-        "%s level=%s subsystem=mp_logger message=\"%s\"\n",
+        "%s level=%s subsystem=%s message=\"%s\"\n",
         timestamp,
         severity,
+        MP_LOGGER_BACKUP_SUBSYSTEM,
         message);
     length = strlen(line);
     (void)pthread_mutex_lock(&logger->backup_logger.mutex);
@@ -836,7 +861,7 @@ void mp_logger_destroy_streams(mp_logger_t *logger) {
  * observable even when only part of the configured sink set can be activated.
  */
 mp_log_status_t mp_logger_build_builtin_streams(mp_logger_t *logger) {
-    char names[MP_LOGGER_MAX_STREAMS][32];
+    char names[MP_LOGGER_MAX_STREAMS][MP_LOGGER_STREAM_NAME_CAPACITY];
     size_t name_count = 0;
     size_t index = 0;
     if (logger == NULL) {
@@ -853,30 +878,33 @@ mp_log_status_t mp_logger_build_builtin_streams(mp_logger_t *logger) {
         mp_logger_stream_t stream;
         mp_log_status_t status = MP_LOG_STATUS_CONFIG_ERROR;
         memset(&stream, 0, sizeof(stream));
-        if (strcmp(names[index], "stdout") == 0) {
+        if (strcmp(names[index], MP_LOGGER_STREAM_STDOUT) == 0) {
             status = mp_logger_make_stdio_stream(
-                "stdout",
+                MP_LOGGER_STREAM_STDOUT,
                 stdout,
                 logger->config.stdout_min_level,
                 logger->config.stdout_max_level,
                 &stream);
-        } else if (strcmp(names[index], "stderr") == 0) {
+        } else if (strcmp(names[index], MP_LOGGER_STREAM_STDERR) == 0) {
             status = mp_logger_make_stdio_stream(
-                "stderr",
+                MP_LOGGER_STREAM_STDERR,
                 stderr,
                 logger->config.stderr_min_level,
                 logger->config.stderr_max_level,
                 &stream);
-        } else if (strcmp(names[index], "file") == 0) {
+        } else if (strcmp(names[index], MP_LOGGER_STREAM_FILE) == 0) {
             status = mp_logger_make_file_stream(logger, &stream);
-        } else if (strcmp(names[index], "udp") == 0) {
+        } else if (strcmp(names[index], MP_LOGGER_STREAM_UDP) == 0) {
             status = mp_logger_make_udp_stream(logger, &stream);
         } else {
             return MP_LOG_STATUS_CONFIG_ERROR;
         }
 
         if (status != MP_LOG_STATUS_OK) {
-            mp_logger_backup_write(logger, "WARNING", "builtin stream initialization failed");
+            mp_logger_backup_write(
+                logger,
+                MP_LOGGER_LEVEL_NAME_WARNING,
+                MP_LOGGER_BACKUP_BUILTIN_INIT_FAILURE);
             continue;
         }
         status = mp_logger_add_owned_stream(logger, &stream);

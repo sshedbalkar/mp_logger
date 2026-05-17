@@ -156,7 +156,7 @@ static int find_file_with_prefix(
     }
     while ((entry = readdir(dir)) != NULL) {
         if (strncmp(entry->d_name, prefix, strlen(prefix)) == 0 &&
-            strstr(entry->d_name, ".log") != NULL) {
+            strstr(entry->d_name, MP_LOGGER_FILE_EXTENSION) != NULL) {
             (void)snprintf(out_path, out_path_capacity, "%s/%s", directory, entry->d_name);
             (void)closedir(dir);
             return 1;
@@ -176,7 +176,7 @@ static void remove_files_with_prefix(const char *directory, const char *prefix) 
     while ((entry = readdir(dir)) != NULL) {
         char path[512];
         if (strncmp(entry->d_name, prefix, strlen(prefix)) != 0 ||
-            strstr(entry->d_name, ".log") == NULL) {
+            strstr(entry->d_name, MP_LOGGER_FILE_EXTENSION) == NULL) {
             continue;
         }
         (void)snprintf(path, sizeof(path), "%s/%s", directory, entry->d_name);
@@ -397,7 +397,7 @@ static void test_structured_fields_validate_and_render_text(void) {
     assert(strstr(capture->formatted_entry, "tenant=\"alpha\"") != NULL);
     assert(strstr(capture->formatted_entry, "ok=true") != NULL);
 
-    reserved_field[0] = mp_log_field_string("message", "shadow");
+    reserved_field[0] = mp_log_field_string(MP_LOGGER_RENDER_KEY_MESSAGE, "shadow");
     assert(mp_logger_log_fields(
         logger,
         MP_LOG_LEVEL_INFO,
@@ -691,36 +691,71 @@ static void test_level_enabled_reports_stream_matches(void) {
 /* Parse an INI override file and verify the loader updates every touched field. */
 static void test_bootstrap_load_applies_overrides(void) {
     const char *config_path = ".tmp/bootstrap-test.ini";
+    char config_text[2048];
     mp_logger_config_t config;
     ensure_directory(".tmp");
-    write_text_file(
-        config_path,
-        "service_name = unit-service\n"
-        "environment_name = staging\n"
+    (void)snprintf(
+        config_text,
+        sizeof(config_text),
+        "%s = unit-service\n"
+        "%s = staging\n"
         "\n"
-        "[logger]\n"
-        "buffer_capacity = 8\n"
-        "message_capacity = 96\n"
-        "context_capacity = 112\n"
-        "field_capacity = 6\n"
-        "field_key_capacity = 40\n"
-        "field_value_capacity = 80\n"
-        "format = text\n"
-        "pretty_output = true\n"
-        "log_directory = .tmp/logger-bootstrap\n"
-        "file_name_prefix = bootstrap-log\n"
-        "backup_file_name_prefix = bootstrap-internal\n"
-        "active_streams = file,udp\n"
+        "[%s]\n"
+        "%s = 8\n"
+        "%s = 96\n"
+        "%s = 112\n"
+        "%s = 6\n"
+        "%s = 40\n"
+        "%s = 80\n"
+        "%s = %s\n"
+        "%s = %s\n"
+        "%s = .tmp/logger-bootstrap\n"
+        "%s = bootstrap-log\n"
+        "%s = bootstrap-internal\n"
+        "%s = %s,%s\n"
         "\n"
-        "[file]\n"
-        "minimum_level = debug\n"
-        "maximum_level = fatal\n"
+        "[%s]\n"
+        "%s = %s\n"
+        "%s = %s\n"
         "\n"
-        "[udp]\n"
-        "minimum_level = error\n"
-        "maximum_level = fatal\n"
-        "host = 127.0.0.1\n"
-        "port = 6500\n");
+        "[%s]\n"
+        "%s = %s\n"
+        "%s = %s\n"
+        "%s = %s\n"
+        "%s = 6500\n",
+        MP_LOGGER_CONFIG_KEY_SERVICE_NAME,
+        MP_LOGGER_CONFIG_KEY_ENVIRONMENT_NAME,
+        MP_LOGGER_CONFIG_SECTION_LOGGER,
+        MP_LOGGER_CONFIG_KEY_BUFFER_CAPACITY,
+        MP_LOGGER_CONFIG_KEY_MESSAGE_CAPACITY,
+        MP_LOGGER_CONFIG_KEY_CONTEXT_CAPACITY,
+        MP_LOGGER_CONFIG_KEY_FIELD_CAPACITY,
+        MP_LOGGER_CONFIG_KEY_FIELD_KEY_CAPACITY,
+        MP_LOGGER_CONFIG_KEY_FIELD_VALUE_CAPACITY,
+        MP_LOGGER_CONFIG_KEY_FORMAT,
+        MP_LOGGER_FORMAT_NAME_TEXT,
+        MP_LOGGER_CONFIG_KEY_PRETTY_OUTPUT,
+        MP_LOGGER_BOOL_TRUE,
+        MP_LOGGER_CONFIG_KEY_LOG_DIRECTORY,
+        MP_LOGGER_CONFIG_KEY_FILE_NAME_PREFIX,
+        MP_LOGGER_CONFIG_KEY_BACKUP_FILE_NAME_PREFIX,
+        MP_LOGGER_CONFIG_KEY_ACTIVE_STREAMS,
+        MP_LOGGER_STREAM_FILE,
+        MP_LOGGER_STREAM_UDP,
+        MP_LOGGER_CONFIG_SECTION_FILE,
+        MP_LOGGER_CONFIG_KEY_MINIMUM_LEVEL,
+        MP_LOGGER_LEVEL_TOKEN_DEBUG,
+        MP_LOGGER_CONFIG_KEY_MAXIMUM_LEVEL,
+        MP_LOGGER_LEVEL_TOKEN_FATAL,
+        MP_LOGGER_CONFIG_SECTION_UDP,
+        MP_LOGGER_CONFIG_KEY_MINIMUM_LEVEL,
+        MP_LOGGER_LEVEL_TOKEN_ERROR,
+        MP_LOGGER_CONFIG_KEY_MAXIMUM_LEVEL,
+        MP_LOGGER_LEVEL_TOKEN_FATAL,
+        MP_LOGGER_CONFIG_KEY_HOST,
+        MP_LOGGER_DEFAULT_UDP_HOST,
+        MP_LOGGER_CONFIG_KEY_PORT);
+    write_text_file(config_path, config_text);
     assert(mp_logger_bootstrap_load(config_path, &config) == MP_LOG_STATUS_OK);
     assert(strcmp(config.service_name, "unit-service") == 0);
     assert(strcmp(config.environment_name, "staging") == 0);
@@ -734,7 +769,8 @@ static void test_bootstrap_load_applies_overrides(void) {
     assert(config.pretty_output == 1);
     assert(strcmp(config.file_name_prefix, "bootstrap-log") == 0);
     assert(strcmp(config.backup_file_name_prefix, "bootstrap-internal") == 0);
-    assert(strcmp(config.active_streams, "file,udp") == 0);
+    assert(strstr(config.active_streams, MP_LOGGER_STREAM_FILE) != NULL);
+    assert(strstr(config.active_streams, MP_LOGGER_STREAM_UDP) != NULL);
     assert(config.file_min_level == MP_LOG_LEVEL_DEBUG);
     assert(config.udp_port == 6500u);
 }
@@ -753,7 +789,7 @@ static void test_file_stream_writes_new_run_file(void) {
     config.buffer_capacity = 4u;
     config.message_capacity = 128u;
     config.context_capacity = 128u;
-    (void)snprintf(config.active_streams, sizeof(config.active_streams), "%s", "file");
+    (void)snprintf(config.active_streams, sizeof(config.active_streams), "%s", MP_LOGGER_STREAM_FILE);
     (void)snprintf(config.log_directory, sizeof(config.log_directory), "%s", ".tmp/logger-output");
     (void)snprintf(config.file_name_prefix, sizeof(config.file_name_prefix), "%s", "unit-file");
     (void)snprintf(

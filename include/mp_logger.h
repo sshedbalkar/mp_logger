@@ -5,14 +5,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "mp_logger_constants.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#define MP_LOGGER_NAME_CAPACITY 64u
-#define MP_LOGGER_PATH_CAPACITY 256u
-#define MP_LOGGER_ACTIVE_STREAMS_CAPACITY 128u
-#define MP_LOGGER_HOST_CAPACITY 128u
 
 /* Describes the severity assigned to a record before routing it to sinks. */
 typedef enum {

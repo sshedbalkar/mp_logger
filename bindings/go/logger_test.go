@@ -11,22 +11,22 @@ import (
 func TestDefaultConfigMatchesCLibraryDefaults(t *testing.T) {
 	config := DefaultConfig()
 
-	if config.ServiceName != "mp-service" {
+	if config.ServiceName != defaultServiceName {
 		t.Fatalf("ServiceName = %q", config.ServiceName)
 	}
-	if config.EnvironmentName != "development" {
+	if config.EnvironmentName != defaultEnvironmentName {
 		t.Fatalf("EnvironmentName = %q", config.EnvironmentName)
 	}
-	if config.ActiveStreams != "stdout,stderr,file" {
+	if config.ActiveStreams != defaultActiveStreams {
 		t.Fatalf("ActiveStreams = %q", config.ActiveStreams)
 	}
 	if config.Format != JSON {
 		t.Fatalf("Format = %v", config.Format)
 	}
-	if config.FieldCapacity != 8 {
+	if config.FieldCapacity != defaultFieldCapacity {
 		t.Fatalf("FieldCapacity = %d", config.FieldCapacity)
 	}
-	if config.UDPPort != 5514 {
+	if config.UDPPort != defaultUDPPort {
 		t.Fatalf("UDPPort = %d", config.UDPPort)
 	}
 }
@@ -34,7 +34,7 @@ func TestDefaultConfigMatchesCLibraryDefaults(t *testing.T) {
 func TestCreateStartLogFlushShutdown(t *testing.T) {
 	tempDir := t.TempDir()
 	config := DefaultConfig()
-	config.ActiveStreams = "file"
+	config.ActiveStreams = streamFile
 	config.LogDirectory = tempDir
 	config.FileNamePrefix = "go-wrapper"
 	config.BackupFileNamePrefix = "wrapper-backup"
@@ -95,26 +95,26 @@ func TestLoadBootstrapConfigAndCreateFromBootstrap(t *testing.T) {
 	tempDir := t.TempDir()
 	configPath := filepath.Join(tempDir, "logger.ini")
 	configText := strings.Join([]string{
-		"service_name = go-bootstrap",
-		"environment_name = test",
+		configKeyServiceName + " = go-bootstrap",
+		configKeyEnvironment + " = test",
 		"",
-		"[logger]",
-		"buffer_capacity = 8",
-		"message_capacity = 96",
-		"context_capacity = 96",
-		"field_capacity = 6",
-		"field_key_capacity = 48",
-		"field_value_capacity = 96",
-		"format = text",
-		"pretty_output = false",
-		"log_directory = " + tempDir,
-		"file_name_prefix = go-bootstrap",
-		"backup_file_name_prefix = go-bootstrap-internal",
-		"active_streams = file",
+		"[" + configSectionLogger + "]",
+		configKeyBufferCapacity + " = 8",
+		configKeyMessageCap + " = 96",
+		configKeyContextCap + " = 96",
+		configKeyFieldCap + " = 6",
+		configKeyFieldKeyCap + " = 48",
+		configKeyFieldValueCap + " = 96",
+		configKeyFormat + " = " + formatNameText,
+		configKeyPrettyOutput + " = " + boolFalse,
+		configKeyLogDirectory + " = " + tempDir,
+		configKeyFilePrefix + " = go-bootstrap",
+		configKeyBackupPrefix + " = go-bootstrap-internal",
+		configKeyActiveStreams + " = " + streamFile,
 		"",
-		"[file]",
-		"minimum_level = trace",
-		"maximum_level = fatal",
+		"[" + configSectionFile + "]",
+		configKeyMinimumLevel + " = " + levelTokenTrace,
+		configKeyMaximumLevel + " = " + levelTokenFatal,
 	}, "\n")
 
 	if err := os.WriteFile(configPath, []byte(configText), 0o644); err != nil {
@@ -162,7 +162,7 @@ func TestLoadBootstrapConfigAndCreateFromBootstrap(t *testing.T) {
 
 func TestCreateRejectsTooLongNames(t *testing.T) {
 	config := DefaultConfig()
-	config.ServiceName = strings.Repeat("x", 64)
+	config.ServiceName = strings.Repeat("x", nameCapacity)
 
 	if _, err := Create(config); err == nil {
 		t.Fatalf("expected Create() to reject long service name")
@@ -172,7 +172,7 @@ func TestCreateRejectsTooLongNames(t *testing.T) {
 func TestLogFieldsRendersStructuredValues(t *testing.T) {
 	tempDir := t.TempDir()
 	config := DefaultConfig()
-	config.ActiveStreams = "file"
+	config.ActiveStreams = streamFile
 	config.LogDirectory = tempDir
 	config.FileNamePrefix = "go-structured"
 	config.BackupFileNamePrefix = "go-internal"

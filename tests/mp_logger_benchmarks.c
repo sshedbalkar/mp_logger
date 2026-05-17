@@ -107,7 +107,7 @@ static size_t benchmark_worker_reserved_bytes(const benchmark_profile_t *profile
         (profile->message_capacity +
             profile->context_capacity +
             (config.field_capacity *
-                (config.field_key_capacity + config.field_value_capacity + 64u)) +
+                (config.field_key_capacity + config.field_value_capacity + MP_LOGGER_NUMBER_TEXT_CAPACITY)) +
             MP_LOGGER_RENDER_PADDING);
 }
 
@@ -286,7 +286,7 @@ static mp_logger_t *benchmark_create_file_logger(const char *backup_prefix, size
     config.buffer_capacity = 8192u;
     config.message_capacity = 256u;
     config.context_capacity = 128u;
-    (void)snprintf(config.active_streams, sizeof(config.active_streams), "%s", "file");
+    (void)snprintf(config.active_streams, sizeof(config.active_streams), "%s", MP_LOGGER_STREAM_FILE);
     (void)snprintf(config.log_directory, sizeof(config.log_directory), "%s", ".tmp/benchmarks/file-streams");
     (void)snprintf(config.file_name_prefix, sizeof(config.file_name_prefix), "%s", "bench-file-primary");
     (void)snprintf(
@@ -639,7 +639,7 @@ static void benchmark_print_environment(void) {
         (void)snprintf(system_name.machine, sizeof(system_name.machine), "%s", "unknown");
     }
     if (gmtime_r(&now_seconds, &now_utc) == NULL ||
-        strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%SZ", &now_utc) == 0) {
+        strftime(timestamp, sizeof(timestamp), MP_LOGGER_BENCHMARK_CAPTURED_FORMAT, &now_utc) == 0) {
         (void)snprintf(timestamp, sizeof(timestamp), "%s", "unknown");
     }
     cpuinfo = fopen("/proc/cpuinfo", "r");

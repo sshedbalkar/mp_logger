@@ -28,24 +28,24 @@ static void mp_logger_make_run_suffix(char *buffer, size_t buffer_capacity) {
     }
     memset(&utc_time, 0, sizeof(utc_time));
     if (gmtime_r(&now_seconds, &utc_time) == NULL) {
-        (void)snprintf(buffer, buffer_capacity, "19700101T000000Z");
+        (void)snprintf(buffer, buffer_capacity, "%s", MP_LOGGER_RUN_SUFFIX_EPOCH);
         return;
     }
-    if (strftime(buffer, buffer_capacity, "%Y%m%dT%H%M%SZ", &utc_time) == 0) {
-        (void)snprintf(buffer, buffer_capacity, "19700101T000000Z");
+    if (strftime(buffer, buffer_capacity, MP_LOGGER_RUN_SUFFIX_FORMAT, &utc_time) == 0) {
+        (void)snprintf(buffer, buffer_capacity, "%s", MP_LOGGER_RUN_SUFFIX_EPOCH);
     }
 }
 
 /* Reserve built-in rendered record keys so user fields cannot shadow them. */
 static int mp_logger_is_reserved_field_key(const char *key) {
     static const char *const reserved_keys[] = {
-        "ts",
-        "level",
-        "service",
-        "environment",
-        "sequence_id",
-        "message",
-        "context"
+        MP_LOGGER_RENDER_KEY_TIMESTAMP,
+        MP_LOGGER_RENDER_KEY_LEVEL,
+        MP_LOGGER_RENDER_KEY_SERVICE,
+        MP_LOGGER_RENDER_KEY_ENVIRONMENT,
+        MP_LOGGER_RENDER_KEY_SEQUENCE_ID,
+        MP_LOGGER_RENDER_KEY_MESSAGE,
+        MP_LOGGER_RENDER_KEY_CONTEXT
     };
     size_t index = 0;
     if (key == NULL) {
@@ -256,7 +256,7 @@ static void mp_logger_flush_drop_counters(
     uint64_t *last_full_total) {
     uint64_t current_busy = 0;
     uint64_t current_full = 0;
-    char message[128];
+    char message[MP_LOGGER_DROP_MESSAGE_CAPACITY];
     if (logger == NULL || last_busy_total == NULL || last_full_total == NULL) {
         return;
     }
@@ -266,9 +266,9 @@ static void mp_logger_flush_drop_counters(
         (void)snprintf(
             message,
             sizeof(message),
-            "log call contention dropped records total=%llu",
+            MP_LOGGER_BACKUP_DROPPED_BUSY_MESSAGE,
             (unsigned long long)current_busy);
-        mp_logger_backup_write(logger, "WARNING", message);
+        mp_logger_backup_write(logger, MP_LOGGER_LEVEL_NAME_WARNING, message);
         *last_busy_total = current_busy;
     }
 
@@ -277,9 +277,9 @@ static void mp_logger_flush_drop_counters(
         (void)snprintf(
             message,
             sizeof(message),
-            "buffer saturation dropped records total=%llu",
+            MP_LOGGER_BACKUP_DROPPED_FULL_MESSAGE,
             (unsigned long long)current_full);
-        mp_logger_backup_write(logger, "WARNING", message);
+        mp_logger_backup_write(logger, MP_LOGGER_LEVEL_NAME_WARNING, message);
         *last_full_total = current_full;
     }
 }
@@ -320,7 +320,7 @@ static void *mp_logger_worker_main(void *context) {
         field_key_buffer == NULL ||
         field_string_buffer == NULL ||
         render_buffer == NULL) {
-        mp_logger_backup_write(logger, "ERROR", "worker thread could not allocate local buffers");
+        mp_logger_backup_write(logger, MP_LOGGER_LEVEL_NAME_ERROR, MP_LOGGER_BACKUP_WORKER_ALLOC_FAILURE);
         free(message_buffer);
         free(context_buffer);
         free(field_buffer);
@@ -384,14 +384,14 @@ static void *mp_logger_worker_main(void *context) {
                     render_buffer,
                     rendered_length);
                 if (status != MP_LOG_STATUS_OK) {
-                    char message[160];
+                    char message[MP_LOGGER_STREAM_ERROR_MESSAGE_CAPACITY];
                     (void)snprintf(
                         message,
                         sizeof(message),
-                        "stream=%s write failure status=%s",
+                        MP_LOGGER_BACKUP_STREAM_WRITE_FAILURE_FORMAT,
                         stream->stream_name,
                         mp_log_status_name(status));
-                    mp_logger_backup_write(logger, "ERROR", message);
+                    mp_logger_backup_write(logger, MP_LOGGER_LEVEL_NAME_ERROR, message);
                 }
             }
             (void)pthread_mutex_unlock(&logger->stream_mutex);
@@ -564,44 +564,44 @@ mp_log_field_t mp_log_field_float64(const char *key, double value) {
 const char *mp_log_level_name(mp_log_level_t level) {
     switch (level) {
     case MP_LOG_LEVEL_TRACE:
-        return "TRACE";
+        return MP_LOGGER_LEVEL_NAME_TRACE;
     case MP_LOG_LEVEL_DEBUG:
-        return "DEBUG";
+        return MP_LOGGER_LEVEL_NAME_DEBUG;
     case MP_LOG_LEVEL_INFO:
-        return "INFO";
+        return MP_LOGGER_LEVEL_NAME_INFO;
     case MP_LOG_LEVEL_WARNING:
-        return "WARNING";
+        return MP_LOGGER_LEVEL_NAME_WARNING;
     case MP_LOG_LEVEL_ERROR:
-        return "ERROR";
+        return MP_LOGGER_LEVEL_NAME_ERROR;
     case MP_LOG_LEVEL_FATAL:
-        return "FATAL";
+        return MP_LOGGER_LEVEL_NAME_FATAL;
     default:
-        return "UNKNOWN";
+        return MP_LOGGER_LEVEL_NAME_UNKNOWN;
     }
 }
 
 const char *mp_log_status_name(mp_log_status_t status) {
     switch (status) {
     case MP_LOG_STATUS_OK:
-        return "OK";
+        return MP_LOGGER_STATUS_NAME_OK;
     case MP_LOG_STATUS_QUEUE_FULL:
-        return "QUEUE_FULL";
+        return MP_LOGGER_STATUS_NAME_QUEUE_FULL;
     case MP_LOG_STATUS_BUSY:
-        return "BUSY";
+        return MP_LOGGER_STATUS_NAME_BUSY;
     case MP_LOG_STATUS_INVALID_ARGUMENT:
-        return "INVALID_ARGUMENT";
+        return MP_LOGGER_STATUS_NAME_INVALID_ARGUMENT;
     case MP_LOG_STATUS_IO_ERROR:
-        return "IO_ERROR";
+        return MP_LOGGER_STATUS_NAME_IO_ERROR;
     case MP_LOG_STATUS_CONFIG_ERROR:
-        return "CONFIG_ERROR";
+        return MP_LOGGER_STATUS_NAME_CONFIG_ERROR;
     case MP_LOG_STATUS_NOT_RUNNING:
-        return "NOT_RUNNING";
+        return MP_LOGGER_STATUS_NAME_NOT_RUNNING;
     case MP_LOG_STATUS_INTERNAL_ERROR:
-        return "INTERNAL_ERROR";
+        return MP_LOGGER_STATUS_NAME_INTERNAL_ERROR;
     case MP_LOG_STATUS_LIMIT_EXCEEDED:
-        return "LIMIT_EXCEEDED";
+        return MP_LOGGER_STATUS_NAME_LIMIT_EXCEEDED;
     default:
-        return "UNKNOWN";
+        return MP_LOGGER_STATUS_NAME_UNKNOWN;
     }
 }
 
@@ -636,7 +636,8 @@ mp_log_status_t mp_logger_create(const mp_logger_config_t *config, mp_logger_t *
         normalized_config.message_capacity +
         normalized_config.context_capacity +
         (normalized_config.field_capacity *
-            (normalized_config.field_key_capacity + normalized_config.field_value_capacity + 64u)) +
+            (normalized_config.field_key_capacity + normalized_config.field_value_capacity +
+                MP_LOGGER_NUMBER_TEXT_CAPACITY)) +
         MP_LOGGER_RENDER_PADDING;
     mp_logger_make_run_suffix(logger->run_suffix, sizeof(logger->run_suffix));
     atomic_init(&logger->queued_records_total, 0u);

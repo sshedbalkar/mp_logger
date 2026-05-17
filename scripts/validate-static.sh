@@ -61,6 +61,20 @@ require_contains() {
   fi
 }
 
+# Require a regex to be absent from implementation-bearing files.
+require_absent_regex() {
+  local check_id="$1"
+  local regex="$2"
+  local description="$3"
+  shift 3
+  local matches
+  if matches="$(rg -n --pcre2 --glob '!include/mp_logger_constants.h' --glob '!scripts/validate-static.sh' -- "$regex" "$@" 2>/dev/null)"; then
+    fail "$check_id" "$description" "$matches"
+  else
+    pass "$check_id" "$description" "$*"
+  fi
+}
+
 # Require a function declaration or definition to have an immediately preceding comment block.
 require_comment_before() {
   local check_id="$1"
@@ -96,6 +110,7 @@ for path in \
   .githooks/commit-msg \
   README.md \
   CMakeLists.txt \
+  include/mp_logger_constants.h \
   bindings/go/README.md \
   bindings/go/go.mod \
   bindings/go/doc.go \
@@ -135,6 +150,9 @@ for script in scripts/build.sh scripts/test.sh scripts/benchmark.sh scripts/depl
 done
 
 require_contains "cmake.install" CMakeLists.txt "install(TARGETS mp_logger" "CMake installs the library target"
+require_contains "constants.header" include/mp_logger_constants.h "MP_LOGGER_DEFAULT_SERVICE_NAME" "central constants header defines defaults"
+require_contains "constants.config-keys" include/mp_logger_constants.h "MP_LOGGER_CONFIG_KEY_ACTIVE_STREAMS" "central constants header defines config keys"
+require_contains "constants.status-names" include/mp_logger_constants.h "MP_LOGGER_STATUS_NAME_LIMIT_EXCEEDED" "central constants header defines status names"
 require_contains "cmake.ctest" CMakeLists.txt "add_test(NAME mp_logger" "CMake registers a CTest target"
 require_contains "cmake.bench" CMakeLists.txt "add_executable(mp_logger_benchmarks" "CMake builds the benchmark target"
 require_contains "test.go-wrapper" scripts/test.sh "go test ./..." "test script runs Go wrapper tests"
@@ -159,6 +177,7 @@ require_contains "config.active-streams" configs/logger.bootstrap.ini "active_st
 require_contains "config.field-capacity" configs/logger.bootstrap.ini "field_capacity =" "bootstrap config declares structured field capacity"
 require_contains "docs.non-blocking" docs/standards.md "non-blocking" "standards doc records non-blocking rule"
 require_contains "docs.structured-fields" docs/standards.md "structured field" "standards doc records structured field rules"
+require_contains "docs.central-constants" docs/standards.md 'Keep durable values centralized' "standards doc records central constants rule"
 require_contains "docs.pluggable" docs/architecture.md "pluggable" "architecture doc records stream extensibility"
 require_comment_before "comment.header.defaults" include/mp_logger.h 'void mp_logger_config_init_defaults(' "public header documents config default initialization"
 require_comment_before "comment.header.bootstrap" include/mp_logger.h 'mp_log_status_t mp_logger_bootstrap_load(' "public header documents bootstrap loading"
@@ -203,6 +222,18 @@ if rg -n '\b(strcpy|strcat|sprintf|vsprintf|gets)\b' include src tests >/dev/nul
 else
   pass "c.unsafe-functions" "unsafe C string functions are absent" "include src tests"
 fi
+
+require_absent_regex \
+  "constants.noncentral-defines" \
+  '#define[[:space:]]+MP_LOGGER_(NAME_CAPACITY|PATH_CAPACITY|ACTIVE_STREAMS_CAPACITY|HOST_CAPACITY|MAX_STREAMS|TIMESTAMP_CAPACITY|RENDER_PADDING|DEFAULT_|CONFIG_KEY_|CONFIG_SECTION_|STREAM_|FORMAT_NAME_|LEVEL_NAME_|LEVEL_TOKEN_|STATUS_NAME_|RENDER_KEY_|BOOL_|FILE_|PATH_|RUN_|TIMESTAMP_|BACKUP_)' \
+  "durable MP_LOGGER constants are defined only in include/mp_logger_constants.h" \
+  include src tests bindings/go scripts
+
+require_absent_regex \
+  "constants.noncentral-literals" \
+  '"(mp-service|development|stdout,stderr,file|service_name|environment_name|buffer_capacity|message_capacity|context_capacity|field_capacity|field_key_capacity|field_value_capacity|pretty_output|log_directory|file_name_prefix|backup_file_name_prefix|active_streams|minimum_level|maximum_level|127\.0\.0\.1|QUEUE_FULL|INVALID_ARGUMENT|LIMIT_EXCEEDED|1970-01-01T00:00:00\.000Z)"' \
+  "durable literals from the constants registry are not duplicated in executable code, tests, or scripts" \
+  include src tests bindings/go scripts
 
 score="$(awk -v passed="$passed" -v total="$total" 'BEGIN { if (total == 0) print "0.0"; else printf "%.1f", (passed / total) * 100 }')"
 status="PASS"

@@ -47,6 +47,8 @@ worker thread
 
 ## Configuration Rules
 
+- Keep durable values centralized: constants, readonly values, defaults, config sections and keys, environment variable names, protocol markers, route markers, status names, error-code strings, reusable capacities, limits, file suffixes, and date formats must be centralized in `include/mp_logger_constants.h` before source, tests, scripts, or bindings consume them.
+- Keep tests, scripts, and bindings asserting against the centralized constants instead of copying contract literals. README examples, runbooks, config templates, and public API docs may repeat values as contract documentation.
 - Keep `mp_logger_config_init_defaults()` and the documented defaults in `README.md` aligned.
 - Keep bootstrap config file-backed and explicit; reject unknown sections, unknown keys, malformed lines, and malformed values with `MP_LOG_STATUS_CONFIG_ERROR`.
 - Keep supported bootstrap sections limited to root keys plus `[logger]`, `[stdout]`, `[stderr]`, `[file]`, and `[udp]`.
@@ -91,4 +93,5 @@ worker thread
 - Keep unit tests covering bootstrap overrides, structured field rendering, pre-start saturation, custom stream rendering, file output, backup warning emission, and stream-limit enforcement.
 - Keep benchmark coverage documenting queue contention and saturation behavior alongside throughput measurements.
 - Keep static validation checking required docs, install rules, config templates, public API presence, and unsafe C function absence.
+- Keep static validation failing when durable constants, config keys, route-like markers, status strings, or default literals appear in executable code, tests, bindings, or scripts outside `include/mp_logger_constants.h`.
 - Keep doc, context, and script changes validated with `./scripts/validate-static.sh`.

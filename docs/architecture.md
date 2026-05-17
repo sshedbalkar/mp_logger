@@ -17,7 +17,7 @@ The repository needs a reusable logging foundation that stays outside applicatio
 - producer calls that use `pthread_mutex_trylock()` and return `BUSY` or `QUEUE_FULL` instead of blocking;
 - one worker thread that dequeues records, renders them once, and fans them out to every active sink;
 - built-in `stdout`, `stderr`, `file`, and `udp` sinks selected from `config.active_streams`;
-- a public callback interface for custom sinks;
+- a public, pluggable callback interface for custom sinks;
 - a separate backup file logger for logger-internal warnings and errors.
 
 ## Runtime Layout

@@ -8,10 +8,6 @@
 #include <stdio.h>
 #include <sys/socket.h>
 
-#define MP_LOGGER_MAX_STREAMS 8u
-#define MP_LOGGER_TIMESTAMP_CAPACITY 32u
-#define MP_LOGGER_RENDER_PADDING 384u
-
 /* Holds one queued record plus its owned copied message, context, and field storage. */
 typedef struct {
     uint64_t sequence_id;
@@ -46,13 +42,13 @@ typedef struct {
     int socket_fd;
     struct sockaddr_storage address;
     socklen_t address_length;
-    char endpoint[MP_LOGGER_HOST_CAPACITY + 16u];
+    char endpoint[MP_LOGGER_HOST_CAPACITY + MP_LOGGER_UDP_ENDPOINT_EXTRA_CAPACITY];
 } mp_udp_stream_state_t;
 
 /* Stores the full logger runtime state, queue buffers, streams, and worker coordination. */
 struct mp_logger {
     mp_logger_config_t config;
-    char run_suffix[32];
+    char run_suffix[MP_LOGGER_RUN_SUFFIX_CAPACITY];
     mp_log_slot_t *slots;
     char *message_storage;
     char *context_storage;
@@ -132,7 +128,7 @@ void mp_logger_copy_truncated(
 /* Split a comma-separated active_streams list into ordered sink names. */
 int mp_logger_split_stream_list(
     const char *active_streams,
-    char names[][32],
+    char names[][MP_LOGGER_STREAM_NAME_CAPACITY],
     size_t max_names,
     size_t *out_count);
 

@@ -5,6 +5,7 @@
 - `AGENTS.md`: bootstrap router, read order, and durable local rules.
 - `README.md`: module purpose, commands, public API summary, and structured field behavior.
 - `include/mp_logger.h`: public contract, including typed structured field APIs.
+- `include/mp_logger_constants.h`: central source of truth for defaults, config keys, stream names, status names, render keys, reusable capacities, file markers, and date formats.
 - `docs/standards.md`: extracted engineering rules for this logger.
 - `docs/architecture.md`: durable architecture decision.
 - `docs/commit-messages.md`: local commit subject and body rules.

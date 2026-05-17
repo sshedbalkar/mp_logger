@@ -25,6 +25,35 @@ static inline void go_mp_logger_set_field_uint64(mp_log_field_t *field, const ch
 static inline void go_mp_logger_set_field_float64(mp_log_field_t *field, const char *key, double value) {
 	*field = mp_log_field_float64(key, value);
 }
+
+static inline const char *go_mp_logger_default_service_name(void) { return MP_LOGGER_DEFAULT_SERVICE_NAME; }
+static inline const char *go_mp_logger_default_environment_name(void) { return MP_LOGGER_DEFAULT_ENVIRONMENT_NAME; }
+static inline const char *go_mp_logger_default_active_streams(void) { return MP_LOGGER_DEFAULT_ACTIVE_STREAMS; }
+static inline const char *go_mp_logger_config_key_service_name(void) { return MP_LOGGER_CONFIG_KEY_SERVICE_NAME; }
+static inline const char *go_mp_logger_config_key_environment_name(void) { return MP_LOGGER_CONFIG_KEY_ENVIRONMENT_NAME; }
+static inline const char *go_mp_logger_config_key_buffer_capacity(void) { return MP_LOGGER_CONFIG_KEY_BUFFER_CAPACITY; }
+static inline const char *go_mp_logger_config_key_message_capacity(void) { return MP_LOGGER_CONFIG_KEY_MESSAGE_CAPACITY; }
+static inline const char *go_mp_logger_config_key_context_capacity(void) { return MP_LOGGER_CONFIG_KEY_CONTEXT_CAPACITY; }
+static inline const char *go_mp_logger_config_key_field_capacity(void) { return MP_LOGGER_CONFIG_KEY_FIELD_CAPACITY; }
+static inline const char *go_mp_logger_config_key_field_key_capacity(void) { return MP_LOGGER_CONFIG_KEY_FIELD_KEY_CAPACITY; }
+static inline const char *go_mp_logger_config_key_field_value_capacity(void) { return MP_LOGGER_CONFIG_KEY_FIELD_VALUE_CAPACITY; }
+static inline const char *go_mp_logger_config_key_format(void) { return MP_LOGGER_CONFIG_KEY_FORMAT; }
+static inline const char *go_mp_logger_config_key_pretty_output(void) { return MP_LOGGER_CONFIG_KEY_PRETTY_OUTPUT; }
+static inline const char *go_mp_logger_config_key_log_directory(void) { return MP_LOGGER_CONFIG_KEY_LOG_DIRECTORY; }
+static inline const char *go_mp_logger_config_key_file_name_prefix(void) { return MP_LOGGER_CONFIG_KEY_FILE_NAME_PREFIX; }
+static inline const char *go_mp_logger_config_key_backup_file_name_prefix(void) { return MP_LOGGER_CONFIG_KEY_BACKUP_FILE_NAME_PREFIX; }
+static inline const char *go_mp_logger_config_key_active_streams(void) { return MP_LOGGER_CONFIG_KEY_ACTIVE_STREAMS; }
+static inline const char *go_mp_logger_config_key_minimum_level(void) { return MP_LOGGER_CONFIG_KEY_MINIMUM_LEVEL; }
+static inline const char *go_mp_logger_config_key_maximum_level(void) { return MP_LOGGER_CONFIG_KEY_MAXIMUM_LEVEL; }
+static inline const char *go_mp_logger_config_key_host(void) { return MP_LOGGER_CONFIG_KEY_HOST; }
+static inline const char *go_mp_logger_config_key_port(void) { return MP_LOGGER_CONFIG_KEY_PORT; }
+static inline const char *go_mp_logger_config_section_logger(void) { return MP_LOGGER_CONFIG_SECTION_LOGGER; }
+static inline const char *go_mp_logger_config_section_file(void) { return MP_LOGGER_CONFIG_SECTION_FILE; }
+static inline const char *go_mp_logger_stream_file(void) { return MP_LOGGER_STREAM_FILE; }
+static inline const char *go_mp_logger_format_name_text(void) { return MP_LOGGER_FORMAT_NAME_TEXT; }
+static inline const char *go_mp_logger_bool_false(void) { return MP_LOGGER_BOOL_FALSE; }
+static inline const char *go_mp_logger_level_token_trace(void) { return MP_LOGGER_LEVEL_TOKEN_TRACE; }
+static inline const char *go_mp_logger_level_token_fatal(void) { return MP_LOGGER_LEVEL_TOKEN_FATAL; }
 */
 import "C"
 
@@ -37,6 +66,41 @@ import (
 )
 
 const maxTimeoutMillis = int64(^uint32(0))
+
+// Centralized contract values mirrored from the C header for wrapper code and tests.
+var (
+	defaultServiceName      = cString(C.go_mp_logger_default_service_name())
+	defaultEnvironmentName  = cString(C.go_mp_logger_default_environment_name())
+	defaultActiveStreams    = cString(C.go_mp_logger_default_active_streams())
+	defaultFieldCapacity    = int(C.MP_LOGGER_DEFAULT_FIELD_CAPACITY)
+	defaultUDPPort          = uint16(C.MP_LOGGER_DEFAULT_UDP_PORT)
+	nameCapacity            = int(C.MP_LOGGER_NAME_CAPACITY)
+	configKeyServiceName    = cString(C.go_mp_logger_config_key_service_name())
+	configKeyEnvironment    = cString(C.go_mp_logger_config_key_environment_name())
+	configKeyBufferCapacity = cString(C.go_mp_logger_config_key_buffer_capacity())
+	configKeyMessageCap     = cString(C.go_mp_logger_config_key_message_capacity())
+	configKeyContextCap     = cString(C.go_mp_logger_config_key_context_capacity())
+	configKeyFieldCap       = cString(C.go_mp_logger_config_key_field_capacity())
+	configKeyFieldKeyCap    = cString(C.go_mp_logger_config_key_field_key_capacity())
+	configKeyFieldValueCap  = cString(C.go_mp_logger_config_key_field_value_capacity())
+	configKeyFormat         = cString(C.go_mp_logger_config_key_format())
+	configKeyPrettyOutput   = cString(C.go_mp_logger_config_key_pretty_output())
+	configKeyLogDirectory   = cString(C.go_mp_logger_config_key_log_directory())
+	configKeyFilePrefix     = cString(C.go_mp_logger_config_key_file_name_prefix())
+	configKeyBackupPrefix   = cString(C.go_mp_logger_config_key_backup_file_name_prefix())
+	configKeyActiveStreams  = cString(C.go_mp_logger_config_key_active_streams())
+	configKeyMinimumLevel   = cString(C.go_mp_logger_config_key_minimum_level())
+	configKeyMaximumLevel   = cString(C.go_mp_logger_config_key_maximum_level())
+	configKeyHost           = cString(C.go_mp_logger_config_key_host())
+	configKeyPort           = cString(C.go_mp_logger_config_key_port())
+	configSectionLogger     = cString(C.go_mp_logger_config_section_logger())
+	configSectionFile       = cString(C.go_mp_logger_config_section_file())
+	streamFile              = cString(C.go_mp_logger_stream_file())
+	formatNameText          = cString(C.go_mp_logger_format_name_text())
+	boolFalse               = cString(C.go_mp_logger_bool_false())
+	levelTokenTrace         = cString(C.go_mp_logger_level_token_trace())
+	levelTokenFatal         = cString(C.go_mp_logger_level_token_fatal())
+)
 
 // Level mirrors the C log severity enum used by queue admission and sink filtering.
 type Level int
@@ -360,22 +424,22 @@ func (config Config) toC() (C.mp_logger_config_t, error) {
 	var err error
 
 	C.mp_logger_config_init_defaults(&out)
-	if out.buffer_capacity, err = toSize(config.BufferCapacity, "buffer_capacity"); err != nil {
+	if out.buffer_capacity, err = toSize(config.BufferCapacity, configKeyBufferCapacity); err != nil {
 		return C.mp_logger_config_t{}, err
 	}
-	if out.message_capacity, err = toSize(config.MessageCapacity, "message_capacity"); err != nil {
+	if out.message_capacity, err = toSize(config.MessageCapacity, configKeyMessageCap); err != nil {
 		return C.mp_logger_config_t{}, err
 	}
-	if out.context_capacity, err = toSize(config.ContextCapacity, "context_capacity"); err != nil {
+	if out.context_capacity, err = toSize(config.ContextCapacity, configKeyContextCap); err != nil {
 		return C.mp_logger_config_t{}, err
 	}
-	if out.field_capacity, err = toSize(config.FieldCapacity, "field_capacity"); err != nil {
+	if out.field_capacity, err = toSize(config.FieldCapacity, configKeyFieldCap); err != nil {
 		return C.mp_logger_config_t{}, err
 	}
-	if out.field_key_capacity, err = toSize(config.FieldKeyCapacity, "field_key_capacity"); err != nil {
+	if out.field_key_capacity, err = toSize(config.FieldKeyCapacity, configKeyFieldKeyCap); err != nil {
 		return C.mp_logger_config_t{}, err
 	}
-	if out.field_value_capacity, err = toSize(config.FieldValueCapacity, "field_value_capacity"); err != nil {
+	if out.field_value_capacity, err = toSize(config.FieldValueCapacity, configKeyFieldValueCap); err != nil {
 		return C.mp_logger_config_t{}, err
 	}
 	out.format = C.mp_log_format_t(config.Format)
@@ -394,25 +458,25 @@ func (config Config) toC() (C.mp_logger_config_t, error) {
 	out.udp_max_level = C.mp_log_level_t(config.UDPMaxLevel)
 	out.udp_port = C.uint16_t(config.UDPPort)
 
-	if err := writeCString(&out.service_name[0], int(C.MP_LOGGER_NAME_CAPACITY), config.ServiceName, "service_name"); err != nil {
+	if err := writeCString(&out.service_name[0], int(C.MP_LOGGER_NAME_CAPACITY), config.ServiceName, configKeyServiceName); err != nil {
 		return C.mp_logger_config_t{}, err
 	}
-	if err := writeCString(&out.environment_name[0], int(C.MP_LOGGER_NAME_CAPACITY), config.EnvironmentName, "environment_name"); err != nil {
+	if err := writeCString(&out.environment_name[0], int(C.MP_LOGGER_NAME_CAPACITY), config.EnvironmentName, configKeyEnvironment); err != nil {
 		return C.mp_logger_config_t{}, err
 	}
-	if err := writeCString(&out.log_directory[0], int(C.MP_LOGGER_PATH_CAPACITY), config.LogDirectory, "log_directory"); err != nil {
+	if err := writeCString(&out.log_directory[0], int(C.MP_LOGGER_PATH_CAPACITY), config.LogDirectory, configKeyLogDirectory); err != nil {
 		return C.mp_logger_config_t{}, err
 	}
-	if err := writeCString(&out.file_name_prefix[0], int(C.MP_LOGGER_NAME_CAPACITY), config.FileNamePrefix, "file_name_prefix"); err != nil {
+	if err := writeCString(&out.file_name_prefix[0], int(C.MP_LOGGER_NAME_CAPACITY), config.FileNamePrefix, configKeyFilePrefix); err != nil {
 		return C.mp_logger_config_t{}, err
 	}
-	if err := writeCString(&out.backup_file_name_prefix[0], int(C.MP_LOGGER_NAME_CAPACITY), config.BackupFileNamePrefix, "backup_file_name_prefix"); err != nil {
+	if err := writeCString(&out.backup_file_name_prefix[0], int(C.MP_LOGGER_NAME_CAPACITY), config.BackupFileNamePrefix, configKeyBackupPrefix); err != nil {
 		return C.mp_logger_config_t{}, err
 	}
-	if err := writeCString(&out.active_streams[0], int(C.MP_LOGGER_ACTIVE_STREAMS_CAPACITY), config.ActiveStreams, "active_streams"); err != nil {
+	if err := writeCString(&out.active_streams[0], int(C.MP_LOGGER_ACTIVE_STREAMS_CAPACITY), config.ActiveStreams, configKeyActiveStreams); err != nil {
 		return C.mp_logger_config_t{}, err
 	}
-	if err := writeCString(&out.udp_host[0], int(C.MP_LOGGER_HOST_CAPACITY), config.UDPHost, "udp_host"); err != nil {
+	if err := writeCString(&out.udp_host[0], int(C.MP_LOGGER_HOST_CAPACITY), config.UDPHost, configKeyHost); err != nil {
 		return C.mp_logger_config_t{}, err
 	}
 
@@ -514,6 +578,11 @@ func freeAllocations(allocations []unsafe.Pointer) {
 
 // readCString copies a NUL-terminated C string into Go.
 func readCString(value *C.char) string {
+	return C.GoString(value)
+}
+
+// cString copies a centralized C contract string into Go package scope.
+func cString(value *C.char) string {
 	return C.GoString(value)
 }
 
