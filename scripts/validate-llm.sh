@@ -1,6 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Writes the semantic LLM gap-review checklist after static validation passes.
+#
+# Usage examples:
+#   ./scripts/validate-llm.sh
+#   ./scripts/validate-static.sh && ./scripts/validate-llm.sh
+
+if [ "${1:-}" = "--help" ]; then
+  cat <<'EOF'
+Usage: ./scripts/validate-llm.sh
+
+Writes .tmp/reports/llm-gap-review.md for semantic review.
+EOF
+  exit 0
+fi
+
 cd "$(dirname "$0")/.."
 
 report_dir=".tmp/reports"

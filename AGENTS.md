@@ -20,5 +20,6 @@
 - If durable navigation or validation facts change, update affected `context/` files in the same change.
 - Commit messages must follow `docs/commit-messages.md`.
 - Durable constants, defaults, status names, config keys, stream names, file suffixes, and date formats must be added to `include/mp_logger_constants.h` before implementation, tests, bindings, or scripts consume them.
+- New or updated scripts must keep top-level comments with a short purpose statement and a `Usage examples:` block, and must print a `Usage:` block with a successful exit when invoked with `--help`.
 - Never create a commit in this repository without a subject and body that pass `./scripts/validate-commit-message.sh`.
 - Validate doc, context, and script changes with `./scripts/validate-static.sh`.

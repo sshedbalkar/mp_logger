@@ -1,6 +1,27 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Builds and runs mp_logger benchmarks and writes a report.
+#
+# Usage examples:
+#   ./scripts/benchmark.sh
+#   ./scripts/benchmark.sh build/local-bench .tmp/reports
+
+if [ "${1:-}" = "--help" ]; then
+  cat <<'EOF'
+Usage: ./scripts/benchmark.sh [build-dir] [report-dir]
+
+Builds and runs mp_logger benchmarks and writes benchmark-results.md.
+
+Arguments:
+  build-dir
+      CMake build directory. Default: build/local-bench.
+  report-dir
+      Benchmark report directory. Default: .tmp/reports.
+EOF
+  exit 0
+fi
+
 cd "$(dirname "$0")/.."
 
 build_dir="${1:-build/local-bench}"

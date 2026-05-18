@@ -1,6 +1,25 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Builds mp_logger and runs C plus Go wrapper tests.
+#
+# Usage examples:
+#   ./scripts/test.sh
+#   ./scripts/test.sh build/local-debug
+
+if [ "${1:-}" = "--help" ]; then
+  cat <<'EOF'
+Usage: ./scripts/test.sh [build-dir]
+
+Builds mp_logger and runs C plus Go wrapper tests.
+
+Arguments:
+  build-dir
+      CMake build directory. Default: build/local-debug.
+EOF
+  exit 0
+fi
+
 cd "$(dirname "$0")/.."
 
 build_dir="${1:-build/local-debug}"

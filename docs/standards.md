@@ -92,6 +92,8 @@ worker thread
 
 - Keep unit tests covering bootstrap overrides, structured field rendering, pre-start saturation, custom stream rendering, file output, backup warning emission, and stream-limit enforcement.
 - Keep benchmark coverage documenting queue contention and saturation behavior alongside throughput measurements.
+- Keep scripts self-documenting with top-level comments that include a short purpose statement and a `Usage examples:` block.
+- Keep every script runnable with `--help`, printing a `Usage:` block and exiting successfully before doing validation, build, deploy, or filesystem work.
 - Keep static validation checking required docs, install rules, config templates, public API presence, and unsafe C function absence.
 - Keep static validation failing when durable constants, config keys, route-like markers, status strings, or default literals appear in executable code, tests, bindings, or scripts outside `include/mp_logger_constants.h`.
 - Keep doc, context, and script changes validated with `./scripts/validate-static.sh`.

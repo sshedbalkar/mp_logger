@@ -1,8 +1,27 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Validates one commit message file against the local commit standard.
+#
+# Usage examples:
+#   ./scripts/validate-commit-message.sh .git/COMMIT_EDITMSG
+#   ./scripts/validate-commit-message.sh .tmp/commit-message.txt
+
+if [ "${1:-}" = "--help" ]; then
+  cat <<'EOF'
+Usage: ./scripts/validate-commit-message.sh <commit-message-file>
+
+Validates one commit message file against docs/commit-messages.md.
+
+Arguments:
+  commit-message-file
+      Path to the commit message file to validate.
+EOF
+  exit 0
+fi
+
 if [ "$#" -ne 1 ]; then
-  echo "usage: $0 <commit-message-file>" >&2
+  echo "Usage: $0 <commit-message-file>" >&2
   exit 1
 fi
 

@@ -1,6 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Runs deterministic validation for mp_logger docs, scripts, constants, and tests.
+#
+# Usage examples:
+#   ./scripts/validate-static.sh
+#   ./scripts/validate-static.sh && ./scripts/validate-llm.sh
+
+if [ "${1:-}" = "--help" ]; then
+  cat <<'EOF'
+Usage: ./scripts/validate-static.sh
+
+Runs deterministic validation for mp_logger docs, scripts, constants, and tests.
+EOF
+  exit 0
+fi
+
 cd "$(dirname "$0")/.."
 
 report_dir=".tmp/reports"
@@ -147,6 +162,24 @@ for script in scripts/build.sh scripts/test.sh scripts/benchmark.sh scripts/depl
     pass "script.exec.${script}" "script is executable" "$script"
   else
     fail "script.exec.${script}" "script is executable" "$script is not executable"
+  fi
+done
+
+for script in scripts/*.sh; do
+  if awk 'NR <= 30 && /^# Usage examples:/ { found = 1 } END { exit(found ? 0 : 1) }' "$script"; then
+    pass "script.header.${script}" "script declares top-level usage examples" "$script"
+  else
+    fail "script.header.${script}" "script declares top-level usage examples" "$script missing Usage examples header"
+  fi
+
+  help_output="$(bash "$script" --help 2>&1)" || {
+    fail "script.help.${script}" "script --help exits successfully" "$help_output"
+    continue
+  }
+  if printf '%s\n' "$help_output" | awk '/^Usage:/ { found = 1 } END { exit(found ? 0 : 1) }'; then
+    pass "script.help.${script}" "script --help prints Usage" "$script"
+  else
+    fail "script.help.${script}" "script --help prints Usage" "$help_output"
   fi
 done
 
