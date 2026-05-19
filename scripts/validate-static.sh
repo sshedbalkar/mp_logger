@@ -7,6 +7,10 @@ set -euo pipefail
 #   ./scripts/validate-static.sh
 #   ./scripts/validate-static.sh && ./scripts/validate-llm.sh
 
+cd "$(dirname "$0")/.."
+# shellcheck source=scripts/lib/script-config-env.sh
+. ./scripts/lib/script-config-env.sh
+
 if [ "${1:-}" = "--help" ]; then
   cat <<'EOF'
 Usage: ./scripts/validate-static.sh
@@ -16,12 +20,10 @@ EOF
   exit 0
 fi
 
-cd "$(dirname "$0")/.."
-
-report_dir=".tmp/reports"
-report="$report_dir/static-validation.md"
-detail="$report_dir/static-validation.tsv"
-threshold=85
+report_dir="$MP_LOGGER_SCRIPT_DEFAULT_REPORT_DIR"
+report="$(mp_logger_script_join_path "$report_dir" "$MP_LOGGER_SCRIPT_DEFAULT_STATIC_REPORT")"
+detail="$(mp_logger_script_join_path "$report_dir" "$MP_LOGGER_SCRIPT_DEFAULT_STATIC_DETAIL")"
+threshold="$MP_LOGGER_SCRIPT_DEFAULT_STATIC_THRESHOLD"
 passed=0
 total=0
 
@@ -142,6 +144,7 @@ for path in \
   tests/mp_logger_tests.c \
   tests/mp_logger_benchmarks.c \
   configs/logger.bootstrap.ini \
+  configs/scripts/defaults.env \
   docs/standards.md \
   docs/architecture.md \
   docs/commit-messages.md \
@@ -152,6 +155,7 @@ for path in \
   context/validators/README.md \
   scripts/benchmark.sh \
   scripts/install-git-hooks.sh \
+  scripts/lib/script-config-env.sh \
   scripts/validate-commit-message.sh
 do
   require_file "file.${path}" "$path" "required file exists"
@@ -190,7 +194,8 @@ require_contains "constants.status-names" include/mp_logger_constants.h "MP_LOGG
 require_contains "cmake.ctest" CMakeLists.txt "add_test(NAME mp_logger" "CMake registers a CTest target"
 require_contains "cmake.bench" CMakeLists.txt "add_executable(mp_logger_benchmarks" "CMake builds the benchmark target"
 require_contains "test.go-wrapper" scripts/test.sh "go test ./..." "test script runs Go wrapper tests"
-require_contains "test.tmp-root" scripts/test.sh "../../.tmp" "test script routes temp files into the parent repo .tmp tree"
+require_contains "script.config.source" scripts/test.sh "MP_LOGGER_SCRIPT_DEFAULT_PARENT_TMP_ROOT" "test script routes temp files through centralized script defaults"
+require_contains "script.config.defaults" configs/scripts/defaults.env "MP_LOGGER_SCRIPT_DEFAULT_BUILD_DIR" "script defaults config owns build and report defaults"
 require_contains "agents.read-order" AGENTS.md "Read order:" "AGENTS defines bootstrap read order"
 require_contains "agents.commit-format" AGENTS.md "docs/commit-messages.md" "AGENTS routes commit format to local source"
 require_contains "agents.commit-validator" AGENTS.md "./scripts/validate-commit-message.sh" "AGENTS requires commit message validation before commit"
@@ -213,6 +218,7 @@ require_contains "config.field-capacity" configs/logger.bootstrap.ini "field_cap
 require_contains "docs.non-blocking" docs/standards.md "non-blocking" "standards doc records non-blocking rule"
 require_contains "docs.structured-fields" docs/standards.md "structured field" "standards doc records structured field rules"
 require_contains "docs.central-constants" docs/standards.md 'Keep durable values centralized' "standards doc records central constants rule"
+require_contains "docs.central-script-config" docs/standards.md 'Keep script-only defaults centralized in `configs/scripts/defaults.env`' "standards doc records central script config rule"
 require_contains "docs.pluggable" docs/architecture.md "pluggable" "architecture doc records stream extensibility"
 require_comment_before "comment.header.defaults" include/mp_logger.h 'void mp_logger_config_init_defaults(' "public header documents config default initialization"
 require_comment_before "comment.header.bootstrap" include/mp_logger.h 'mp_log_status_t mp_logger_bootstrap_load(' "public header documents bootstrap loading"
@@ -269,6 +275,12 @@ require_absent_regex \
   '"(mp-service|development|stdout,stderr,file|service_name|environment_name|buffer_capacity|message_capacity|context_capacity|field_capacity|field_key_capacity|field_value_capacity|pretty_output|log_directory|file_name_prefix|backup_file_name_prefix|active_streams|minimum_level|maximum_level|127\.0\.0\.1|QUEUE_FULL|INVALID_ARGUMENT|LIMIT_EXCEEDED|1970-01-01T00:00:00\.000Z)"' \
   "durable literals from the constants registry are not duplicated in executable code, tests, or scripts" \
   include src tests bindings/go scripts
+
+require_absent_regex \
+  "scripts.noncentral-defaults" \
+  '(:-|\=)"?(build/local-debug|build/local-bench|build/release|dist/install|\.tmp/reports|\.\./\.\./\.tmp|Debug|Release|ON|OFF|\.githooks|85|benchmark-results\.md|llm-gap-review\.md|static-validation\.(md|tsv))' \
+  "script-only defaults are defined in configs/scripts/defaults.env instead of executable scripts" \
+  scripts
 
 if rg -n '/tmp/|\$\{TMPDIR:-/tmp\}' README.md bindings/go scripts -g '!scripts/validate-static.sh' >/dev/null; then
   fail "temp.no-os-temp-root" "logger module avoids OS temp roots for repo-local scratch" "found an OS temp-root reference"

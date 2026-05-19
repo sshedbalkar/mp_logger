@@ -4,6 +4,7 @@
 
 - `readme`: `README.md` -- module overview and commands
 - `contract.constants`: `include/mp_logger_constants.h` -- central source of truth for durable defaults, config keys, status names, stream names, file markers, capacities, and date formats
+- `config.script-defaults`: `configs/scripts/defaults.env` -- centralized shell-script defaults for build, test, deploy, benchmark, report, hook, and temp settings
 - `binding.go`: `bindings/go/README.md` -- bundled cgo wrapper usage and limits
 - `doc.standards`: `docs/standards.md` -- extracted rules for logger work
 - `doc.architecture`: `docs/architecture.md` -- runtime and extension design

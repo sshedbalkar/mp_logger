@@ -6,6 +6,7 @@
 - `README.md`: module purpose, commands, public API summary, and structured field behavior.
 - `include/mp_logger.h`: public contract, including typed structured field APIs.
 - `include/mp_logger_constants.h`: central source of truth for defaults, config keys, stream names, status names, render keys, reusable capacities, file markers, and date formats.
+- `configs/scripts/defaults.env`: central source of truth for script-only build, test, deploy, benchmark, hook, report, and temp defaults.
 - `docs/standards.md`: extracted engineering rules for this logger.
 - `docs/architecture.md`: durable architecture decision.
 - `docs/commit-messages.md`: local commit subject and body rules.
@@ -29,6 +30,7 @@
 - `scripts/benchmark.sh`
 - `scripts/deploy.sh`
 - `scripts/install-git-hooks.sh`
+- `scripts/lib/script-config-env.sh`
 - `scripts/validate-commit-message.sh`
 - `scripts/validate-static.sh`
 - `scripts/validate-llm.sh`

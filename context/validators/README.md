@@ -3,7 +3,7 @@
 ## Static
 
 - command: `./scripts/validate-static.sh`
-- proves: required files exist, scripts are executable, script header usage examples and `--help` output exist, install/test hooks exist, the bundled Go wrapper is present, the config template exists, the local commit-message rule and hook are wired, public APIs and selected complex functions retain comments, structured field APIs are documented, durable values stay centralized in `include/mp_logger_constants.h`, unsafe C functions are absent, and the logger still uses non-blocking queue admission.
+- proves: required files exist, scripts are executable, script header usage examples and `--help` output exist, install/test hooks exist, the bundled Go wrapper is present, the config template exists, script-only defaults stay centralized in `configs/scripts/defaults.env`, the local commit-message rule and hook are wired, public APIs and selected complex functions retain comments, structured field APIs are documented, durable values stay centralized in `include/mp_logger_constants.h`, unsafe C functions are absent, and the logger still uses non-blocking queue admission.
 
 ## Commit Message
 

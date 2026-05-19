@@ -7,19 +7,21 @@ set -euo pipefail
 #   ./scripts/validate-llm.sh
 #   ./scripts/validate-static.sh && ./scripts/validate-llm.sh
 
+cd "$(dirname "$0")/.."
+# shellcheck source=scripts/lib/script-config-env.sh
+. ./scripts/lib/script-config-env.sh
+
 if [ "${1:-}" = "--help" ]; then
-  cat <<'EOF'
+  cat <<EOF
 Usage: ./scripts/validate-llm.sh
 
-Writes .tmp/reports/llm-gap-review.md for semantic review.
+Writes $MP_LOGGER_SCRIPT_DEFAULT_REPORT_DIR/$MP_LOGGER_SCRIPT_DEFAULT_LLM_REPORT for semantic review.
 EOF
   exit 0
 fi
 
-cd "$(dirname "$0")/.."
-
-report_dir=".tmp/reports"
-report="$report_dir/llm-gap-review.md"
+report_dir="$MP_LOGGER_SCRIPT_DEFAULT_REPORT_DIR"
+report="$(mp_logger_script_join_path "$report_dir" "$MP_LOGGER_SCRIPT_DEFAULT_LLM_REPORT")"
 
 mkdir -p "$report_dir"
 

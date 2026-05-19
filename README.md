@@ -22,7 +22,7 @@ bindings/go/             bundled Go wrapper and tests
 include/                 public header
 src/                     implementation
 tests/                   C unit tests
-configs/                 bootstrap config template
+configs/                 bootstrap config template and script defaults
 docs/                    extracted standards and architecture docs
 context/                 dedicated retrieval and validation indexes
 scripts/                 build, test, deploy, and validator entrypoints
@@ -41,6 +41,8 @@ scripts/                 build, test, deploy, and validator entrypoints
 ```
 
 Run `./scripts/install-git-hooks.sh` once per clone to enforce the local commit-message rule through the repo-provided `commit-msg` hook.
+
+Script-only defaults live in [configs/scripts/defaults.env](configs/scripts/defaults.env). Override those defaults with environment variables or positional arguments instead of editing executable scripts.
 
 ## Bootstrap Config
 
