@@ -699,6 +699,7 @@ static void test_bootstrap_load_applies_overrides(void) {
         sizeof(config_text),
         "%s = unit-service\n"
         "%s = staging\n"
+	    "%s = 1.2.3\n"
         "\n"
         "[%s]\n"
         "%s = 8\n"
@@ -725,6 +726,7 @@ static void test_bootstrap_load_applies_overrides(void) {
         "%s = 6500\n",
         MP_LOGGER_CONFIG_KEY_SERVICE_NAME,
         MP_LOGGER_CONFIG_KEY_ENVIRONMENT_NAME,
+	    MP_LOGGER_CONFIG_KEY_BUILD_VERSION,
         MP_LOGGER_CONFIG_SECTION_LOGGER,
         MP_LOGGER_CONFIG_KEY_BUFFER_CAPACITY,
         MP_LOGGER_CONFIG_KEY_MESSAGE_CAPACITY,
@@ -759,6 +761,7 @@ static void test_bootstrap_load_applies_overrides(void) {
     assert(mp_logger_bootstrap_load(config_path, &config) == MP_LOG_STATUS_OK);
     assert(strcmp(config.service_name, "unit-service") == 0);
     assert(strcmp(config.environment_name, "staging") == 0);
+    assert(strcmp(config.build_version, "1.2.3") == 0);
     assert(config.buffer_capacity == 8u);
     assert(config.message_capacity == 96u);
     assert(config.context_capacity == 112u);
@@ -773,6 +776,25 @@ static void test_bootstrap_load_applies_overrides(void) {
     assert(strstr(config.active_streams, MP_LOGGER_STREAM_UDP) != NULL);
     assert(config.file_min_level == MP_LOG_LEVEL_DEBUG);
     assert(config.udp_port == 6500u);
+}
+
+/* Reject bootstrap build versions outside MAJOR.MINOR.HOTFIX. */
+static void test_bootstrap_load_rejects_invalid_build_version(void) {
+    const char *config_path = ".tmp/bootstrap-invalid-version-test.ini";
+    char config_text[256];
+    mp_logger_config_t config;
+    ensure_directory(".tmp");
+    (void)snprintf(
+	config_text,
+	sizeof(config_text),
+	"%s = unit-service\n"
+	"%s = staging\n"
+	"%s = 1.2\n",
+	MP_LOGGER_CONFIG_KEY_SERVICE_NAME,
+	MP_LOGGER_CONFIG_KEY_ENVIRONMENT_NAME,
+	MP_LOGGER_CONFIG_KEY_BUILD_VERSION);
+    write_text_file(config_path, config_text);
+    assert(mp_logger_bootstrap_load(config_path, &config) == MP_LOG_STATUS_CONFIG_ERROR);
 }
 
 /* Use the builtin file sink and then locate the per-run log file written by that logger instance. */
@@ -926,6 +948,7 @@ int main(void) {
     test_structured_fields_escape_render_output();
     test_level_enabled_reports_stream_matches();
     test_bootstrap_load_applies_overrides();
+    test_bootstrap_load_rejects_invalid_build_version();
     test_file_stream_writes_new_run_file();
     test_buffer_saturation_writes_backup_warning();
     test_stream_limit_is_enforced();

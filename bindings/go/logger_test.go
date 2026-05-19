@@ -17,6 +17,9 @@ func TestDefaultConfigMatchesCLibraryDefaults(t *testing.T) {
 	if config.EnvironmentName != defaultEnvironmentName {
 		t.Fatalf("EnvironmentName = %q", config.EnvironmentName)
 	}
+	if config.BuildVersion != defaultBuildVersion {
+		t.Fatalf("BuildVersion = %q", config.BuildVersion)
+	}
 	if config.ActiveStreams != defaultActiveStreams {
 		t.Fatalf("ActiveStreams = %q", config.ActiveStreams)
 	}
@@ -97,6 +100,7 @@ func TestLoadBootstrapConfigAndCreateFromBootstrap(t *testing.T) {
 	configText := strings.Join([]string{
 		configKeyServiceName + " = go-bootstrap",
 		configKeyEnvironment + " = test",
+		configKeyBuildVersion + " = 1.2.3",
 		"",
 		"[" + configSectionLogger + "]",
 		configKeyBufferCapacity + " = 8",
@@ -130,6 +134,9 @@ func TestLoadBootstrapConfigAndCreateFromBootstrap(t *testing.T) {
 	}
 	if config.FileNamePrefix != "go-bootstrap" {
 		t.Fatalf("FileNamePrefix = %q", config.FileNamePrefix)
+	}
+	if config.BuildVersion != "1.2.3" {
+		t.Fatalf("BuildVersion = %q", config.BuildVersion)
 	}
 	if config.FieldCapacity != 6 {
 		t.Fatalf("FieldCapacity = %d", config.FieldCapacity)

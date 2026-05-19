@@ -28,9 +28,11 @@ static inline void go_mp_logger_set_field_float64(mp_log_field_t *field, const c
 
 static inline const char *go_mp_logger_default_service_name(void) { return MP_LOGGER_DEFAULT_SERVICE_NAME; }
 static inline const char *go_mp_logger_default_environment_name(void) { return MP_LOGGER_DEFAULT_ENVIRONMENT_NAME; }
+static inline const char *go_mp_logger_default_build_version(void) { return MP_LOGGER_DEFAULT_BUILD_VERSION; }
 static inline const char *go_mp_logger_default_active_streams(void) { return MP_LOGGER_DEFAULT_ACTIVE_STREAMS; }
 static inline const char *go_mp_logger_config_key_service_name(void) { return MP_LOGGER_CONFIG_KEY_SERVICE_NAME; }
 static inline const char *go_mp_logger_config_key_environment_name(void) { return MP_LOGGER_CONFIG_KEY_ENVIRONMENT_NAME; }
+static inline const char *go_mp_logger_config_key_build_version(void) { return MP_LOGGER_CONFIG_KEY_BUILD_VERSION; }
 static inline const char *go_mp_logger_config_key_buffer_capacity(void) { return MP_LOGGER_CONFIG_KEY_BUFFER_CAPACITY; }
 static inline const char *go_mp_logger_config_key_message_capacity(void) { return MP_LOGGER_CONFIG_KEY_MESSAGE_CAPACITY; }
 static inline const char *go_mp_logger_config_key_context_capacity(void) { return MP_LOGGER_CONFIG_KEY_CONTEXT_CAPACITY; }
@@ -71,12 +73,14 @@ const maxTimeoutMillis = int64(^uint32(0))
 var (
 	defaultServiceName      = cString(C.go_mp_logger_default_service_name())
 	defaultEnvironmentName  = cString(C.go_mp_logger_default_environment_name())
+	defaultBuildVersion     = cString(C.go_mp_logger_default_build_version())
 	defaultActiveStreams    = cString(C.go_mp_logger_default_active_streams())
 	defaultFieldCapacity    = int(C.MP_LOGGER_DEFAULT_FIELD_CAPACITY)
 	defaultUDPPort          = uint16(C.MP_LOGGER_DEFAULT_UDP_PORT)
 	nameCapacity            = int(C.MP_LOGGER_NAME_CAPACITY)
 	configKeyServiceName    = cString(C.go_mp_logger_config_key_service_name())
 	configKeyEnvironment    = cString(C.go_mp_logger_config_key_environment_name())
+	configKeyBuildVersion   = cString(C.go_mp_logger_config_key_build_version())
 	configKeyBufferCapacity = cString(C.go_mp_logger_config_key_buffer_capacity())
 	configKeyMessageCap     = cString(C.go_mp_logger_config_key_message_capacity())
 	configKeyContextCap     = cString(C.go_mp_logger_config_key_context_capacity())
@@ -171,6 +175,7 @@ var ErrClosed = errors.New("mp_logger: logger closed")
 type Config struct {
 	ServiceName          string
 	EnvironmentName      string
+	BuildVersion         string
 	BufferCapacity       int
 	MessageCapacity      int
 	ContextCapacity      int
@@ -464,6 +469,9 @@ func (config Config) toC() (C.mp_logger_config_t, error) {
 	if err := writeCString(&out.environment_name[0], int(C.MP_LOGGER_NAME_CAPACITY), config.EnvironmentName, configKeyEnvironment); err != nil {
 		return C.mp_logger_config_t{}, err
 	}
+	if err := writeCString(&out.build_version[0], int(C.MP_LOGGER_NAME_CAPACITY), config.BuildVersion, configKeyBuildVersion); err != nil {
+		return C.mp_logger_config_t{}, err
+	}
 	if err := writeCString(&out.log_directory[0], int(C.MP_LOGGER_PATH_CAPACITY), config.LogDirectory, configKeyLogDirectory); err != nil {
 		return C.mp_logger_config_t{}, err
 	}
@@ -488,6 +496,7 @@ func configFromC(config C.mp_logger_config_t) Config {
 	return Config{
 		ServiceName:          readCString(&config.service_name[0]),
 		EnvironmentName:      readCString(&config.environment_name[0]),
+		BuildVersion:         readCString(&config.build_version[0]),
 		BufferCapacity:       int(config.buffer_capacity),
 		MessageCapacity:      int(config.message_capacity),
 		ContextCapacity:      int(config.context_capacity),

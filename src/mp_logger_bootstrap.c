@@ -70,6 +70,30 @@ static int mp_logger_parse_port_value(const char *value, uint16_t *out_port) {
     return 1;
 }
 
+/* Validate MAJOR.MINOR.HOTFIX text with numeric-only components. */
+static int mp_logger_is_build_version_valid(const char *value) {
+    unsigned int component_count = 0u;
+    int saw_digit = 0;
+    if (value == NULL || value[0] == '\0') {
+	return 0;
+    }
+    while (*value != '\0') {
+	if (isdigit((unsigned char)*value)) {
+	    saw_digit = 1;
+	} else if (*value == '.') {
+	    if (!saw_digit) {
+		return 0;
+	    }
+	    component_count++;
+	    saw_digit = 0;
+	} else {
+	    return 0;
+	}
+	value++;
+    }
+    return saw_digit && component_count == 2u;
+}
+
 /* Trim leading and trailing ASCII whitespace in place while preserving an empty-string fallback. */
 void mp_logger_copy_trimmed(char *dest, size_t dest_capacity, const char *src) {
     size_t start = 0;
@@ -111,6 +135,13 @@ static mp_log_status_t mp_logger_apply_root_value(
     if (strcmp(key, MP_LOGGER_CONFIG_KEY_ENVIRONMENT_NAME) == 0) {
         mp_logger_copy_trimmed(config->environment_name, sizeof(config->environment_name), value);
         return MP_LOG_STATUS_OK;
+    }
+    if (strcmp(key, MP_LOGGER_CONFIG_KEY_BUILD_VERSION) == 0) {
+	if (!mp_logger_is_build_version_valid(value)) {
+	    return MP_LOG_STATUS_CONFIG_ERROR;
+	}
+	mp_logger_copy_trimmed(config->build_version, sizeof(config->build_version), value);
+	return MP_LOG_STATUS_OK;
     }
     return MP_LOG_STATUS_CONFIG_ERROR;
 }
@@ -300,6 +331,7 @@ void mp_logger_config_init_defaults(mp_logger_config_t *config) {
         config->environment_name,
         sizeof(config->environment_name),
         MP_LOGGER_DEFAULT_ENVIRONMENT_NAME);
+    mp_logger_copy_trimmed(config->build_version, sizeof(config->build_version), MP_LOGGER_DEFAULT_BUILD_VERSION);
     config->buffer_capacity = MP_LOGGER_DEFAULT_BUFFER_CAPACITY;
     config->message_capacity = MP_LOGGER_DEFAULT_MESSAGE_CAPACITY;
     config->context_capacity = MP_LOGGER_DEFAULT_CONTEXT_CAPACITY;

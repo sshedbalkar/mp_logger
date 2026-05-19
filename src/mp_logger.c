@@ -423,6 +423,7 @@ static int mp_logger_validate_config(const mp_logger_config_t *config) {
         config->field_value_capacity > 1 &&
         config->service_name[0] != '\0' &&
         config->environment_name[0] != '\0' &&
+	    config->build_version[0] != '\0' &&
         config->file_name_prefix[0] != '\0' &&
         config->backup_file_name_prefix[0] != '\0' &&
         config->log_directory[0] != '\0';

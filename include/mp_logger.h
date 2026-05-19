@@ -86,6 +86,7 @@ typedef struct {
 typedef struct {
     char service_name[MP_LOGGER_NAME_CAPACITY];
     char environment_name[MP_LOGGER_NAME_CAPACITY];
+    char build_version[MP_LOGGER_NAME_CAPACITY];
     size_t buffer_capacity;
     size_t message_capacity;
     size_t context_capacity;

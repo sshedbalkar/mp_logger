@@ -94,6 +94,7 @@ worker thread
 - Keep benchmark coverage documenting queue contention and saturation behavior alongside throughput measurements.
 - Keep scripts self-documenting with top-level comments that include a short purpose statement and a `Usage examples:` block.
 - Keep every script runnable with `--help`, printing a `Usage:` block and exiting successfully before doing validation, build, deploy, or filesystem work.
+- Keep build versions in `MAJOR.MINOR.HOTFIX` format, read them from `build_version` in bootstrap config, increment MINOR by default for build-producing scripts, reset HOTFIX to `0`, and expose a skip option for manually managed versions.
 - Keep script-only defaults centralized in `configs/scripts/defaults.env`; executable scripts may read those defaults or accept explicit operator arguments, but must not embed fallback build directories, report paths, install prefixes, thresholds, hook paths, temp roots, or CMake option values.
 - Keep static validation checking required docs, install rules, config templates, public API presence, and unsafe C function absence.
 - Keep static validation failing when durable constants, config keys, route-like markers, status strings, or default literals appear in executable code, tests, bindings, or scripts outside `include/mp_logger_constants.h`.

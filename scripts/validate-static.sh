@@ -156,6 +156,7 @@ for path in \
   scripts/benchmark.sh \
   scripts/install-git-hooks.sh \
   scripts/lib/script-config-env.sh \
+  scripts/lib/version-env.sh \
   scripts/validate-commit-message.sh
 do
   require_file "file.${path}" "$path" "required file exists"
@@ -189,6 +190,7 @@ done
 
 require_contains "cmake.install" CMakeLists.txt "install(TARGETS mp_logger" "CMake installs the library target"
 require_contains "constants.header" include/mp_logger_constants.h "MP_LOGGER_DEFAULT_SERVICE_NAME" "central constants header defines defaults"
+require_contains "constants.build-version" include/mp_logger_constants.h "MP_LOGGER_DEFAULT_BUILD_VERSION" "central constants header defines build version default"
 require_contains "constants.config-keys" include/mp_logger_constants.h "MP_LOGGER_CONFIG_KEY_ACTIVE_STREAMS" "central constants header defines config keys"
 require_contains "constants.status-names" include/mp_logger_constants.h "MP_LOGGER_STATUS_NAME_LIMIT_EXCEEDED" "central constants header defines status names"
 require_contains "cmake.ctest" CMakeLists.txt "add_test(NAME mp_logger" "CMake registers a CTest target"
@@ -214,11 +216,13 @@ require_contains "readme.structured-fields" README.md "Structured fields support
 require_contains "nonblocking.trylock" src/mp_logger.c "pthread_mutex_trylock" "producer path uses non-blocking queue admission"
 require_contains "backup.logger" src/mp_logger_streams.c "mp_logger_backup_write" "backup logger path exists"
 require_contains "config.active-streams" configs/logger.bootstrap.ini "active_streams =" "bootstrap config declares active streams"
+require_contains "config.build-version" configs/logger.bootstrap.ini "build_version =" "bootstrap config declares build version"
 require_contains "config.field-capacity" configs/logger.bootstrap.ini "field_capacity =" "bootstrap config declares structured field capacity"
 require_contains "docs.non-blocking" docs/standards.md "non-blocking" "standards doc records non-blocking rule"
 require_contains "docs.structured-fields" docs/standards.md "structured field" "standards doc records structured field rules"
 require_contains "docs.central-constants" docs/standards.md 'Keep durable values centralized' "standards doc records central constants rule"
 require_contains "docs.central-script-config" docs/standards.md 'Keep script-only defaults centralized in `configs/scripts/defaults.env`' "standards doc records central script config rule"
+require_contains "docs.build-version" docs/standards.md 'Keep build versions in `MAJOR.MINOR.HOTFIX` format' "standards doc records build version rule"
 require_contains "docs.pluggable" docs/architecture.md "pluggable" "architecture doc records stream extensibility"
 require_comment_before "comment.header.defaults" include/mp_logger.h 'void mp_logger_config_init_defaults(' "public header documents config default initialization"
 require_comment_before "comment.header.bootstrap" include/mp_logger.h 'mp_log_status_t mp_logger_bootstrap_load(' "public header documents bootstrap loading"
