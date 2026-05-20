@@ -12,7 +12,7 @@ The repository needs a reusable logging foundation that stays outside applicatio
 
 `mp_logger` is implemented as a standalone C library with:
 
-- a validated config object that can be built in code or loaded from a bootstrap INI file;
+- a validated config object that can be built in code or loaded from a commented bootstrap YAML file;
 - a bounded queue backed by preallocated message, context, and structured field buffers;
 - producer calls that use `pthread_mutex_trylock()` and return `BUSY` or `QUEUE_FULL` instead of blocking;
 - one worker thread that dequeues records, renders them once, and fans them out to every active sink;

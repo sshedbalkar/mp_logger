@@ -5,7 +5,7 @@ set -euo pipefail
 #
 # Usage examples:
 #   . ./scripts/lib/version-env.sh
-#   MP_LOGGER_BUILD_VERSION_CONFIG_PATH=configs/logger.bootstrap.ini . ./scripts/lib/version-env.sh
+#   MP_LOGGER_BUILD_VERSION_CONFIG_PATH=configs/logger.bootstrap.yaml . ./scripts/lib/version-env.sh
 
 if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "${1:-}" = "--help" ]; then
   cat <<'EOF'
@@ -15,7 +15,7 @@ Provides helpers for reading and updating the configured mp_logger build version
 
 Environment:
   MP_LOGGER_BUILD_VERSION_CONFIG_PATH
-      Optional config path override. Default: configs/logger.bootstrap.ini.
+      Optional config path override. Default: configs/logger.bootstrap.yaml.
 EOF
   exit 0
 fi
@@ -55,7 +55,7 @@ mp_logger_read_build_version_from_config() {
     mp_logger_version_die "build-version config file not found: $version_config_file"
 
   build_version_value="$(
-    awk -F= -v target_key="$MP_LOGGER_BUILD_VERSION_KEY" '
+    awk -F: -v target_key="$MP_LOGGER_BUILD_VERSION_KEY" '
       BEGIN {
         in_root = 1
       }
@@ -66,11 +66,11 @@ mp_logger_read_build_version_from_config() {
         return value
       }
 
-      /^[[:space:]]*[#;]/ || /^[[:space:]]*$/ {
+      /^[[:space:]]*#/ || /^[[:space:]]*$/ {
         next
       }
 
-      /^[[:space:]]*\[[^]]+\][[:space:]]*$/ {
+      /^[^[:space:]][^:]*:[[:space:]]*$/ {
         in_root = 0
         next
       }
@@ -82,7 +82,10 @@ mp_logger_read_build_version_from_config() {
       {
         key = trim($1)
         if (key == target_key) {
-          print trim(substr($0, index($0, "=") + 1))
+          value = trim(substr($0, index($0, ":") + 1))
+          gsub(/^"/, "", value)
+          gsub(/"$/, "", value)
+          print value
           found = 1
           exit
         }
@@ -130,9 +133,9 @@ mp_logger_write_build_version_to_config() {
       in_root = 1
     }
 
-    /^[[:space:]]*\[[^]]+\][[:space:]]*$/ {
+    /^[^[:space:]][^:]*:[[:space:]]*$/ {
       if (wrote != 1) {
-        print target_key " = " next_value
+        print target_key ": \"" next_value "\""
         wrote = 1
       }
       print
@@ -147,12 +150,12 @@ mp_logger_write_build_version_to_config() {
 
     {
       line = $0
-      split(line, parts, "=")
+      split(line, parts, ":")
       key = parts[1]
       gsub(/^[[:space:]]+/, "", key)
       gsub(/[[:space:]]+$/, "", key)
       if (key == target_key) {
-        print target_key " = " next_value
+        print target_key ": \"" next_value "\""
         wrote = 1
         next
       }
@@ -161,7 +164,7 @@ mp_logger_write_build_version_to_config() {
 
     END {
       if (wrote != 1) {
-        print target_key " = " next_value
+        print target_key ": \"" next_value "\""
       }
     }' "$version_config_file" >"$version_config_temp_file"
 

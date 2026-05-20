@@ -36,7 +36,7 @@ import (
 )
 
 func main() {
-	logger, err := mplogger.CreateFromBootstrap("configs/logger.bootstrap.ini")
+	logger, err := mplogger.CreateFromBootstrap("configs/logger.bootstrap.yaml")
 	if err != nil {
 		log.Fatal(err)
 	}

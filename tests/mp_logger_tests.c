@@ -688,45 +688,46 @@ static void test_level_enabled_reports_stream_matches(void) {
     mp_logger_destroy(logger);
 }
 
-/* Parse an INI override file and verify the loader updates every touched field. */
+/* Parse a YAML bootstrap file and verify the loader updates every touched field. */
 static void test_bootstrap_load_applies_overrides(void) {
-    const char *config_path = ".tmp/bootstrap-test.ini";
+    const char *config_path = ".tmp/bootstrap-test.yaml";
     char config_text[2048];
     mp_logger_config_t config;
     ensure_directory(".tmp");
     (void)snprintf(
         config_text,
         sizeof(config_text),
-        "%s = unit-service\n"
-        "%s = staging\n"
-	    "%s = 1.2.3\n"
+        "# Full YAML config with every supported section.\n"
+        "%s: unit-service\n"
+        "%s: staging\n"
+        "%s: \"1.2.3\"\n"
         "\n"
-        "[%s]\n"
-        "%s = 8\n"
-        "%s = 96\n"
-        "%s = 112\n"
-        "%s = 6\n"
-        "%s = 40\n"
-        "%s = 80\n"
-        "%s = %s\n"
-        "%s = %s\n"
-        "%s = .tmp/logger-bootstrap\n"
-        "%s = bootstrap-log\n"
-        "%s = bootstrap-internal\n"
-        "%s = %s,%s\n"
+        "%s:\n"
+        "  %s: 8\n"
+        "  %s: 96\n"
+        "  %s: 112\n"
+        "  %s: 6\n"
+        "  %s: 40\n"
+        "  %s: 80\n"
+        "  %s: %s\n"
+        "  %s: %s\n"
+        "  %s: .tmp/logger-bootstrap\n"
+        "  %s: bootstrap-log\n"
+        "  %s: bootstrap-internal\n"
+        "  %s: \"%s,%s\"\n"
         "\n"
-        "[%s]\n"
-        "%s = %s\n"
-        "%s = %s\n"
+        "%s:\n"
+        "  %s: %s\n"
+        "  %s: %s\n"
         "\n"
-        "[%s]\n"
-        "%s = %s\n"
-        "%s = %s\n"
-        "%s = %s\n"
-        "%s = 6500\n",
+        "%s:\n"
+        "  %s: %s\n"
+        "  %s: %s\n"
+        "  %s: %s\n"
+        "  %s: 6500\n",
         MP_LOGGER_CONFIG_KEY_SERVICE_NAME,
         MP_LOGGER_CONFIG_KEY_ENVIRONMENT_NAME,
-	    MP_LOGGER_CONFIG_KEY_BUILD_VERSION,
+        MP_LOGGER_CONFIG_KEY_BUILD_VERSION,
         MP_LOGGER_CONFIG_SECTION_LOGGER,
         MP_LOGGER_CONFIG_KEY_BUFFER_CAPACITY,
         MP_LOGGER_CONFIG_KEY_MESSAGE_CAPACITY,
@@ -776,6 +777,15 @@ static void test_bootstrap_load_applies_overrides(void) {
     assert(strstr(config.active_streams, MP_LOGGER_STREAM_UDP) != NULL);
     assert(config.file_min_level == MP_LOG_LEVEL_DEBUG);
     assert(config.udp_port == 6500u);
+}
+
+/* Reject legacy INI bootstrap files now that mp_logger config is YAML-only. */
+static void test_bootstrap_load_rejects_ini_path(void) {
+    const char *config_path = ".tmp/bootstrap-test.ini";
+    mp_logger_config_t config;
+    ensure_directory(".tmp");
+    write_text_file(config_path, "service_name = unit-service\n");
+    assert(mp_logger_bootstrap_load(config_path, &config) == MP_LOG_STATUS_CONFIG_ERROR);
 }
 
 /* Parse the standard YAML bootstrap shape used by parent applications. */
@@ -850,19 +860,19 @@ static void test_configure_updates_runtime_safe_fields(void) {
 
 /* Reject bootstrap build versions outside MAJOR.MINOR.HOTFIX. */
 static void test_bootstrap_load_rejects_invalid_build_version(void) {
-    const char *config_path = ".tmp/bootstrap-invalid-version-test.ini";
+    const char *config_path = ".tmp/bootstrap-invalid-version-test.yaml";
     char config_text[256];
     mp_logger_config_t config;
     ensure_directory(".tmp");
     (void)snprintf(
-	config_text,
-	sizeof(config_text),
-	"%s = unit-service\n"
-	"%s = staging\n"
-	"%s = 1.2\n",
-	MP_LOGGER_CONFIG_KEY_SERVICE_NAME,
-	MP_LOGGER_CONFIG_KEY_ENVIRONMENT_NAME,
-	MP_LOGGER_CONFIG_KEY_BUILD_VERSION);
+        config_text,
+        sizeof(config_text),
+        "%s: unit-service\n"
+        "%s: staging\n"
+        "%s: 1.2\n",
+        MP_LOGGER_CONFIG_KEY_SERVICE_NAME,
+        MP_LOGGER_CONFIG_KEY_ENVIRONMENT_NAME,
+        MP_LOGGER_CONFIG_KEY_BUILD_VERSION);
     write_text_file(config_path, config_text);
     assert(mp_logger_bootstrap_load(config_path, &config) == MP_LOG_STATUS_CONFIG_ERROR);
 }
@@ -1018,6 +1028,7 @@ int main(void) {
     test_structured_fields_escape_render_output();
     test_level_enabled_reports_stream_matches();
     test_bootstrap_load_applies_overrides();
+    test_bootstrap_load_rejects_ini_path();
     test_bootstrap_load_applies_yaml_overrides();
     test_configure_updates_runtime_safe_fields();
     test_bootstrap_load_rejects_invalid_build_version();

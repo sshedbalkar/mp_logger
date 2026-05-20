@@ -1,0 +1,43 @@
+# Self-contained mp_logger bootstrap defaults.
+# Parent applications should load this file first, then apply their own
+# overrides with mp_logger_config_apply_override() or mp_logger_configure().
+service_name: mp-service
+environment_name: development
+build_version: "0.0.0"
+
+# Queue, message, and field limits bound memory before the worker starts.
+logger:
+  buffer_capacity: 1024
+  message_capacity: 512
+  context_capacity: 1024
+  field_capacity: 8
+  field_key_capacity: 32
+  field_value_capacity: 128
+  format: json
+  pretty_output: false
+  log_directory: "."
+  file_name_prefix: mp-service
+  backup_file_name_prefix: mp-logger-internal
+  active_streams: "stdout,stderr,file"
+
+# Standard output receives low-severity records.
+stdout:
+  minimum_level: trace
+  maximum_level: info
+
+# Standard error receives warning-and-higher records.
+stderr:
+  minimum_level: warning
+  maximum_level: fatal
+
+# File output keeps the full retained stream.
+file:
+  minimum_level: trace
+  maximum_level: fatal
+
+# UDP export is inactive unless active_streams includes udp.
+udp:
+  minimum_level: error
+  maximum_level: fatal
+  host: "127.0.0.1"
+  port: 5514

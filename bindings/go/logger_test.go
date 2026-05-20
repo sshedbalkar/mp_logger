@@ -96,29 +96,29 @@ func TestCreateStartLogFlushShutdown(t *testing.T) {
 
 func TestLoadBootstrapConfigAndCreateFromBootstrap(t *testing.T) {
 	tempDir := repoTempDir(t)
-	configPath := filepath.Join(tempDir, "logger.ini")
+	configPath := filepath.Join(tempDir, "logger.yaml")
 	configText := strings.Join([]string{
-		configKeyServiceName + " = go-bootstrap",
-		configKeyEnvironment + " = test",
-		configKeyBuildVersion + " = 1.2.3",
+		configKeyServiceName + ": go-bootstrap",
+		configKeyEnvironment + ": test",
+		configKeyBuildVersion + ": \"1.2.3\"",
 		"",
-		"[" + configSectionLogger + "]",
-		configKeyBufferCapacity + " = 8",
-		configKeyMessageCap + " = 96",
-		configKeyContextCap + " = 96",
-		configKeyFieldCap + " = 6",
-		configKeyFieldKeyCap + " = 48",
-		configKeyFieldValueCap + " = 96",
-		configKeyFormat + " = " + formatNameText,
-		configKeyPrettyOutput + " = " + boolFalse,
-		configKeyLogDirectory + " = " + tempDir,
-		configKeyFilePrefix + " = go-bootstrap",
-		configKeyBackupPrefix + " = go-bootstrap-internal",
-		configKeyActiveStreams + " = " + streamFile,
+		configSectionLogger + ":",
+		"  " + configKeyBufferCapacity + ": 8",
+		"  " + configKeyMessageCap + ": 96",
+		"  " + configKeyContextCap + ": 96",
+		"  " + configKeyFieldCap + ": 6",
+		"  " + configKeyFieldKeyCap + ": 48",
+		"  " + configKeyFieldValueCap + ": 96",
+		"  " + configKeyFormat + ": " + formatNameText,
+		"  " + configKeyPrettyOutput + ": " + boolFalse,
+		"  " + configKeyLogDirectory + ": " + tempDir,
+		"  " + configKeyFilePrefix + ": go-bootstrap",
+		"  " + configKeyBackupPrefix + ": go-bootstrap-internal",
+		"  " + configKeyActiveStreams + ": " + streamFile,
 		"",
-		"[" + configSectionFile + "]",
-		configKeyMinimumLevel + " = " + levelTokenTrace,
-		configKeyMaximumLevel + " = " + levelTokenFatal,
+		configSectionFile + ":",
+		"  " + configKeyMinimumLevel + ": " + levelTokenTrace,
+		"  " + configKeyMaximumLevel + ": " + levelTokenFatal,
 	}, "\n")
 
 	if err := os.WriteFile(configPath, []byte(configText), 0o644); err != nil {
@@ -140,6 +140,13 @@ func TestLoadBootstrapConfigAndCreateFromBootstrap(t *testing.T) {
 	}
 	if config.FieldCapacity != 6 {
 		t.Fatalf("FieldCapacity = %d", config.FieldCapacity)
+	}
+	config, err = config.ApplyOverride(configSectionLogger, configKeyMessageCap, "128")
+	if err != nil {
+		t.Fatalf("ApplyOverride() error = %v", err)
+	}
+	if config.MessageCapacity != 128 {
+		t.Fatalf("MessageCapacity = %d", config.MessageCapacity)
 	}
 
 	logger, err := CreateFromBootstrap(configPath)
@@ -164,6 +171,17 @@ func TestLoadBootstrapConfigAndCreateFromBootstrap(t *testing.T) {
 	}
 	if len(matches) == 0 {
 		t.Fatalf("expected bootstrap log file")
+	}
+}
+
+func TestLoadBootstrapConfigRejectsINIPath(t *testing.T) {
+	tempDir := repoTempDir(t)
+	configPath := filepath.Join(tempDir, "logger.ini")
+	if err := os.WriteFile(configPath, []byte("service_name = legacy\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	if _, err := LoadBootstrapConfig(configPath); err == nil {
+		t.Fatalf("LoadBootstrapConfig() expected INI path rejection")
 	}
 }
 

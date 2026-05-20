@@ -68,7 +68,7 @@ install(TARGETS mp_logger
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-install(FILES configs/logger.bootstrap.ini DESTINATION ${CMAKE_INSTALL_DATADIR}/mp_logger)
+install(FILES configs/logger.bootstrap.yaml DESTINATION ${CMAKE_INSTALL_DATADIR}/mp_logger)
 install(
   FILES
     ${CMAKE_CURRENT_BINARY_DIR}/mp_loggerConfig.cmake

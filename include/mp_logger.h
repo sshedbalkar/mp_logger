@@ -180,7 +180,7 @@ mp_log_status_t mp_logger_config_apply_override(
     const char *value);
 
 /*
- * Load a bootstrap YAML or legacy INI file into out_config.
+ * Load a commented bootstrap YAML file into out_config.
  * Unknown sections, unknown keys, malformed values, and unreadable files are rejected instead
  * of being ignored.
  */

@@ -56,6 +56,20 @@ static void mp_logger_unquote_scalar(char *value) {
     }
 }
 
+/* Accept only YAML bootstrap files so runtime config stays on one commented format. */
+static int mp_logger_has_yaml_extension(const char *config_path) {
+    const char *extension = NULL;
+    if (config_path == NULL) {
+        return 0;
+    }
+    extension = strrchr(config_path, '.');
+    if (extension == NULL) {
+        return 0;
+    }
+    return mp_logger_equal_ignore_case(extension, ".yaml") ||
+        mp_logger_equal_ignore_case(extension, ".yml");
+}
+
 /* Parse one non-negative decimal size value from bootstrap config. */
 static int mp_logger_parse_size_value(const char *value, size_t *out_size) {
     char *end = NULL;
@@ -495,7 +509,7 @@ int mp_logger_split_stream_list(
 }
 
 /*
- * Parse the bootstrap file one trimmed line at a time.
+ * Parse the YAML bootstrap file one trimmed line at a time.
  * The loader keeps section state explicitly and rejects malformed lines immediately so config
  * errors do not turn into partial logger startup with guessed defaults.
  */
@@ -506,6 +520,9 @@ mp_log_status_t mp_logger_bootstrap_load(const char *config_path, mp_logger_conf
     char current_section[MP_LOGGER_BOOTSTRAP_SECTION_CAPACITY] = MP_LOGGER_CONFIG_SECTION_ROOT;
     if (config_path == NULL || out_config == NULL) {
         return MP_LOG_STATUS_INVALID_ARGUMENT;
+    }
+    if (!mp_logger_has_yaml_extension(config_path)) {
+        return MP_LOG_STATUS_CONFIG_ERROR;
     }
 
     mp_logger_config_init_defaults(&config);
@@ -519,34 +536,12 @@ mp_log_status_t mp_logger_bootstrap_load(const char *config_path, mp_logger_conf
         char key[MP_LOGGER_BOOTSTRAP_KEY_CAPACITY];
         char value[MP_LOGGER_BOOTSTRAP_VALUE_CAPACITY];
         mp_logger_copy_trimmed(line, sizeof(line), line);
-        if (line[0] == '\0' || line[0] == '#' || line[0] == ';') {
-            continue;
-        }
-        if (line[0] == '[') {
-            size_t section_length = strlen(line);
-            if (section_length < 3 || line[section_length - 1] != ']') {
-                fclose(file);
-                return MP_LOG_STATUS_CONFIG_ERROR;
-            }
-            line[section_length - 1] = '\0';
-            mp_logger_copy_trimmed(
-                current_section,
-                sizeof(current_section),
-                line + 1);
+        if (line[0] == '\0' || line[0] == '#') {
             continue;
         }
 
-        separator = strchr(line, '=');
+        separator = strchr(line, ':');
         if (separator == NULL) {
-            separator = strchr(line, ':');
-        }
-        if (separator == NULL) {
-            size_t section_length = strlen(line);
-            if (section_length > 1u && line[section_length - 1u] == ':') {
-                line[section_length - 1u] = '\0';
-                mp_logger_copy_trimmed(current_section, sizeof(current_section), line);
-                continue;
-            }
             fclose(file);
             return MP_LOG_STATUS_CONFIG_ERROR;
         }
@@ -554,7 +549,7 @@ mp_log_status_t mp_logger_bootstrap_load(const char *config_path, mp_logger_conf
         mp_logger_copy_trimmed(key, sizeof(key), line);
         mp_logger_copy_trimmed(value, sizeof(value), separator + 1);
         mp_logger_unquote_scalar(value);
-        if (value[0] == '\0' && separator[1] == '\0') {
+        if (value[0] == '\0') {
             mp_logger_copy_trimmed(current_section, sizeof(current_section), key);
             continue;
         }

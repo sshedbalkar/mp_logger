@@ -244,7 +244,7 @@ func DefaultConfig() Config {
 	return configFromC(config)
 }
 
-// LoadBootstrapConfig parses a bootstrap YAML or legacy INI file into a Config without creating a logger.
+// LoadBootstrapConfig parses a bootstrap YAML file into a Config without creating a logger.
 func LoadBootstrapConfig(path string) (Config, error) {
 	cPath := C.CString(path)
 	defer C.free(unsafe.Pointer(cPath))
@@ -255,6 +255,27 @@ func LoadBootstrapConfig(path string) (Config, error) {
 		return Config{}, err
 	}
 	return configFromC(config), nil
+}
+
+// ApplyOverride applies one section/key/value override through mp_logger_config_apply_override.
+func (config Config) ApplyOverride(section string, key string, value string) (Config, error) {
+	cConfig, err := config.toC()
+	if err != nil {
+		return Config{}, err
+	}
+
+	cSection := C.CString(section)
+	defer C.free(unsafe.Pointer(cSection))
+	cKey := C.CString(key)
+	defer C.free(unsafe.Pointer(cKey))
+	cValue := C.CString(value)
+	defer C.free(unsafe.Pointer(cValue))
+
+	status := C.mp_logger_config_apply_override(&cConfig, cSection, cKey, cValue)
+	if err := statusError("config_apply_override", status); err != nil {
+		return Config{}, err
+	}
+	return configFromC(cConfig), nil
 }
 
 // Create allocates a logger from config without starting the worker thread.

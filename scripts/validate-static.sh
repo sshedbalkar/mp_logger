@@ -143,7 +143,7 @@ for path in \
   src/mp_logger_streams.c \
   tests/mp_logger_tests.c \
   tests/mp_logger_benchmarks.c \
-  configs/logger.bootstrap.ini \
+  configs/logger.bootstrap.yaml \
   configs/scripts/defaults.env \
   docs/standards.md \
   docs/architecture.md \
@@ -215,9 +215,9 @@ require_contains "readme.go-wrapper" README.md "bindings/go" "README documents t
 require_contains "readme.structured-fields" README.md "Structured fields support" "README documents structured field behavior"
 require_contains "nonblocking.trylock" src/mp_logger.c "pthread_mutex_trylock" "producer path uses non-blocking queue admission"
 require_contains "backup.logger" src/mp_logger_streams.c "mp_logger_backup_write" "backup logger path exists"
-require_contains "config.active-streams" configs/logger.bootstrap.ini "active_streams =" "bootstrap config declares active streams"
-require_contains "config.build-version" configs/logger.bootstrap.ini "build_version =" "bootstrap config declares build version"
-require_contains "config.field-capacity" configs/logger.bootstrap.ini "field_capacity =" "bootstrap config declares structured field capacity"
+require_contains "config.active-streams" configs/logger.bootstrap.yaml "active_streams:" "bootstrap config declares active streams"
+require_contains "config.build-version" configs/logger.bootstrap.yaml "build_version:" "bootstrap config declares build version"
+require_contains "config.field-capacity" configs/logger.bootstrap.yaml "field_capacity:" "bootstrap config declares structured field capacity"
 require_contains "docs.non-blocking" docs/standards.md "non-blocking" "standards doc records non-blocking rule"
 require_contains "docs.structured-fields" docs/standards.md "structured field" "standards doc records structured field rules"
 require_contains "docs.central-constants" docs/standards.md 'Keep durable values centralized' "standards doc records central constants rule"

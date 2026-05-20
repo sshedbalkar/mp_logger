@@ -46,9 +46,9 @@ Script-only defaults live in [configs/scripts/defaults.env](configs/scripts/defa
 
 ## Bootstrap Config
 
-Template: [configs/logger.bootstrap.ini](configs/logger.bootstrap.ini)
+Template: [configs/logger.bootstrap.yaml](configs/logger.bootstrap.yaml)
 
-The bootstrap loader accepts root keys plus `[logger]`, `[stdout]`, `[stderr]`, `[file]`, and `[udp]` sections. Unknown sections, unknown keys, or malformed values are rejected with `MP_LOG_STATUS_CONFIG_ERROR`.
+The bootstrap loader accepts commented YAML with root keys plus `logger`, `stdout`, `stderr`, `file`, and `udp` sections. Unknown sections, unknown keys, legacy INI syntax, or malformed values are rejected with `MP_LOG_STATUS_CONFIG_ERROR`.
 
 ### Root keys
 
@@ -57,7 +57,7 @@ The bootstrap loader accepts root keys plus `[logger]`, `[stdout]`, `[stderr]`, 
 | `service_name` | string | `mp-service` | Included in every rendered record. Must not be empty. |
 | `environment_name` | string | `development` | Included in every rendered record. Must not be empty. |
 
-### `[logger]` keys
+### `logger` keys
 
 | Key | Type | Default | Notes |
 |:----|:-----|:--------|:------|
@@ -74,28 +74,28 @@ The bootstrap loader accepts root keys plus `[logger]`, `[stdout]`, `[stderr]`, 
 | `backup_file_name_prefix` | string | `mp-logger-internal` | Prefix for logger-internal backup log files. Must not be empty. |
 | `active_streams` | comma-separated string | `stdout,stderr,file` | Built-in names: `stdout`, `stderr`, `file`, `udp`. Empty disables built-in streams. |
 
-### `[stdout]` keys
+### `stdout` keys
 
 | Key | Type | Default | Notes |
 |:----|:-----|:--------|:------|
 | `minimum_level` | enum | `trace` | Supported levels: `trace`, `debug`, `info`, `warning`, `error`, `fatal`. `warn` is also accepted. |
 | `maximum_level` | enum | `info` | Same accepted values as `minimum_level`. |
 
-### `[stderr]` keys
+### `stderr` keys
 
 | Key | Type | Default | Notes |
 |:----|:-----|:--------|:------|
 | `minimum_level` | enum | `warning` | Supported levels: `trace`, `debug`, `info`, `warning`, `error`, `fatal`. `warn` is also accepted. |
 | `maximum_level` | enum | `fatal` | Same accepted values as `minimum_level`. |
 
-### `[file]` keys
+### `file` keys
 
 | Key | Type | Default | Notes |
 |:----|:-----|:--------|:------|
 | `minimum_level` | enum | `trace` | Supported levels: `trace`, `debug`, `info`, `warning`, `error`, `fatal`. `warn` is also accepted. |
 | `maximum_level` | enum | `fatal` | Same accepted values as `minimum_level`. |
 
-### `[udp]` keys
+### `udp` keys
 
 | Key | Type | Default | Notes |
 |:----|:-----|:--------|:------|
@@ -139,7 +139,7 @@ The bundled Go wrapper lives in [bindings/go](bindings/go) and compiles the vend
 int main(void) {
     mp_logger_t *logger = NULL;
 
-    if (mp_logger_create_from_bootstrap("configs/logger.bootstrap.ini", &logger) != MP_LOG_STATUS_OK) {
+    if (mp_logger_create_from_bootstrap("configs/logger.bootstrap.yaml", &logger) != MP_LOG_STATUS_OK) {
         return 1;
     }
     (void)mp_logger_log(logger, MP_LOG_LEVEL_INFO, "service started", "port=8080");
@@ -348,7 +348,7 @@ import (
 )
 
 func main() {
-	logger, err := mplogger.CreateFromBootstrap("configs/logger.bootstrap.ini")
+	logger, err := mplogger.CreateFromBootstrap("configs/logger.bootstrap.yaml")
 	if err != nil {
 		log.Fatal(err)
 	}

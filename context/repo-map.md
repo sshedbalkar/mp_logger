@@ -7,7 +7,7 @@
 - `include/mp_logger.h`: public contract, including typed structured field APIs.
 - `include/mp_logger_constants.h`: central source of truth for defaults, config keys, stream names, status names, render keys, reusable capacities, file markers, and date formats.
 - `configs/scripts/defaults.env`: central source of truth for script-only build, test, deploy, benchmark, hook, report, and temp defaults.
-- `configs/logger.bootstrap.ini`: bootstrap logger config and build-version source.
+- `configs/logger.bootstrap.yaml`: bootstrap logger config and build-version source.
 - `docs/standards.md`: extracted engineering rules for this logger.
 - `docs/architecture.md`: durable architecture decision.
 - `docs/commit-messages.md`: local commit subject and body rules.
