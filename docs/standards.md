@@ -51,7 +51,9 @@ worker thread
 - Keep tests, scripts, and bindings asserting against the centralized constants instead of copying contract literals. README examples, runbooks, config templates, and public API docs may repeat values as contract documentation.
 - Keep `mp_logger_config_init_defaults()` and the documented defaults in `README.md` aligned.
 - Keep bootstrap config file-backed and explicit; reject unknown sections, unknown keys, malformed lines, and malformed values with `MP_LOG_STATUS_CONFIG_ERROR`.
+- Prefer YAML for new bootstrap config files; keep INI parsing only as a compatibility path for existing `logger.bootstrap.ini` users.
 - Keep supported bootstrap sections limited to root keys plus `[logger]`, `[stdout]`, `[stderr]`, `[file]`, and `[udp]`.
+- Keep runtime reconfiguration limited to fields that do not require queue reallocation or replacing open sink handles.
 - Keep `active_streams` comma-separated, order-preserving, and trim surrounding ASCII whitespace; an empty value disables built-in streams.
 - Keep built-in stream names limited to `stdout`, `stderr`, `file`, and `udp`.
 - Keep structured field keys unique within a single log call and reject keys that would collide with built-in rendered keys.

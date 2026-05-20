@@ -41,6 +41,21 @@ static int mp_logger_parse_bool(const char *value, int *out_bool) {
     return 0;
 }
 
+/* Remove matching YAML quotes after trimming a parsed scalar. */
+static void mp_logger_unquote_scalar(char *value) {
+    size_t length = 0;
+    if (value == NULL) {
+        return;
+    }
+    length = strlen(value);
+    if (length >= 2u &&
+        ((value[0] == '"' && value[length - 1u] == '"') ||
+            (value[0] == '\'' && value[length - 1u] == '\''))) {
+        memmove(value, value + 1, length - 2u);
+        value[length - 2u] = '\0';
+    }
+}
+
 /* Parse one non-negative decimal size value from bootstrap config. */
 static int mp_logger_parse_size_value(const char *value, size_t *out_size) {
     char *end = NULL;
@@ -320,6 +335,32 @@ static mp_log_status_t mp_logger_apply_value(
     return MP_LOG_STATUS_CONFIG_ERROR;
 }
 
+mp_log_status_t mp_logger_config_apply_override(
+    mp_logger_config_t *config,
+    const char *section,
+    const char *key,
+    const char *value) {
+    char normalized_section[MP_LOGGER_BOOTSTRAP_SECTION_CAPACITY];
+    char normalized_key[MP_LOGGER_BOOTSTRAP_KEY_CAPACITY];
+    char normalized_value[MP_LOGGER_BOOTSTRAP_VALUE_CAPACITY];
+
+    if (config == NULL || key == NULL || value == NULL) {
+        return MP_LOG_STATUS_INVALID_ARGUMENT;
+    }
+
+    mp_logger_copy_trimmed(
+        normalized_section,
+        sizeof(normalized_section),
+        section == NULL ? MP_LOGGER_CONFIG_SECTION_ROOT : section);
+    mp_logger_copy_trimmed(normalized_key, sizeof(normalized_key), key);
+    mp_logger_copy_trimmed(normalized_value, sizeof(normalized_value), value);
+    mp_logger_unquote_scalar(normalized_value);
+    if (normalized_key[0] == '\0') {
+        return MP_LOG_STATUS_CONFIG_ERROR;
+    }
+    return mp_logger_apply_value(normalized_section, normalized_key, normalized_value, config);
+}
+
 /* Centralize every documented default in one place so file-backed and code-backed config agree. */
 void mp_logger_config_init_defaults(mp_logger_config_t *config) {
     if (config == NULL) {
@@ -497,17 +538,31 @@ mp_log_status_t mp_logger_bootstrap_load(const char *config_path, mp_logger_conf
 
         separator = strchr(line, '=');
         if (separator == NULL) {
+            separator = strchr(line, ':');
+        }
+        if (separator == NULL) {
+            size_t section_length = strlen(line);
+            if (section_length > 1u && line[section_length - 1u] == ':') {
+                line[section_length - 1u] = '\0';
+                mp_logger_copy_trimmed(current_section, sizeof(current_section), line);
+                continue;
+            }
             fclose(file);
             return MP_LOG_STATUS_CONFIG_ERROR;
         }
         *separator = '\0';
         mp_logger_copy_trimmed(key, sizeof(key), line);
         mp_logger_copy_trimmed(value, sizeof(value), separator + 1);
+        mp_logger_unquote_scalar(value);
+        if (value[0] == '\0' && separator[1] == '\0') {
+            mp_logger_copy_trimmed(current_section, sizeof(current_section), key);
+            continue;
+        }
         if (key[0] == '\0') {
             fclose(file);
             return MP_LOG_STATUS_CONFIG_ERROR;
         }
-        if (mp_logger_apply_value(current_section, key, value, &config) != MP_LOG_STATUS_OK) {
+        if (mp_logger_config_apply_override(&config, current_section, key, value) != MP_LOG_STATUS_OK) {
             fclose(file);
             return MP_LOG_STATUS_CONFIG_ERROR;
         }

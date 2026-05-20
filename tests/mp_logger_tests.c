@@ -778,6 +778,76 @@ static void test_bootstrap_load_applies_overrides(void) {
     assert(config.udp_port == 6500u);
 }
 
+/* Parse the standard YAML bootstrap shape used by parent applications. */
+static void test_bootstrap_load_applies_yaml_overrides(void) {
+    const char *config_path = ".tmp/bootstrap-test.yaml";
+    mp_logger_config_t config;
+    ensure_directory(".tmp");
+    write_text_file(
+        config_path,
+        "service_name: yaml-service\n"
+        "environment_name: qa\n"
+        "build_version: \"2.3.4\"\n"
+        "logger:\n"
+        "  buffer_capacity: 9\n"
+        "  message_capacity: 97\n"
+        "  context_capacity: 113\n"
+        "  field_capacity: 7\n"
+        "  field_key_capacity: 41\n"
+        "  field_value_capacity: 81\n"
+        "  format: text\n"
+        "  pretty_output: true\n"
+        "  log_directory: .tmp/logger-yaml\n"
+        "  file_name_prefix: yaml-log\n"
+        "  backup_file_name_prefix: yaml-internal\n"
+        "  active_streams: file\n"
+        "file:\n"
+        "  minimum_level: debug\n"
+        "  maximum_level: fatal\n");
+
+    assert(mp_logger_bootstrap_load(config_path, &config) == MP_LOG_STATUS_OK);
+    assert(strcmp(config.service_name, "yaml-service") == 0);
+    assert(strcmp(config.environment_name, "qa") == 0);
+    assert(strcmp(config.build_version, "2.3.4") == 0);
+    assert(config.buffer_capacity == 9u);
+    assert(config.message_capacity == 97u);
+    assert(config.context_capacity == 113u);
+    assert(config.field_capacity == 7u);
+    assert(config.field_key_capacity == 41u);
+    assert(config.field_value_capacity == 81u);
+    assert(config.format == MP_LOG_FORMAT_TEXT);
+    assert(config.pretty_output == 1);
+    assert(strcmp(config.file_name_prefix, "yaml-log") == 0);
+    assert(strcmp(config.backup_file_name_prefix, "yaml-internal") == 0);
+    assert(strcmp(config.active_streams, MP_LOGGER_STREAM_FILE) == 0);
+    assert(config.file_min_level == MP_LOG_LEVEL_DEBUG);
+}
+
+/* Apply runtime-safe config changes without reallocating queues or replacing sinks. */
+static void test_configure_updates_runtime_safe_fields(void) {
+    mp_logger_config_t config;
+    mp_logger_config_t updated;
+    mp_logger_config_t observed;
+    mp_logger_t *logger = NULL;
+
+    mp_logger_config_init_defaults(&config);
+    (void)snprintf(config.active_streams, sizeof(config.active_streams), "%s", "");
+    assert(mp_logger_create(&config, &logger) == MP_LOG_STATUS_OK);
+
+    updated = config;
+    (void)snprintf(updated.service_name, sizeof(updated.service_name), "%s", "configured-service");
+    updated.format = MP_LOG_FORMAT_TEXT;
+    updated.stdout_min_level = MP_LOG_LEVEL_ERROR;
+    assert(mp_logger_configure(logger, &updated) == MP_LOG_STATUS_OK);
+    assert(mp_logger_get_config(logger, &observed) == MP_LOG_STATUS_OK);
+    assert(strcmp(observed.service_name, "configured-service") == 0);
+    assert(observed.format == MP_LOG_FORMAT_TEXT);
+
+    updated.buffer_capacity = config.buffer_capacity + 1u;
+    assert(mp_logger_configure(logger, &updated) == MP_LOG_STATUS_CONFIG_ERROR);
+    mp_logger_destroy(logger);
+}
+
 /* Reject bootstrap build versions outside MAJOR.MINOR.HOTFIX. */
 static void test_bootstrap_load_rejects_invalid_build_version(void) {
     const char *config_path = ".tmp/bootstrap-invalid-version-test.ini";
@@ -948,6 +1018,8 @@ int main(void) {
     test_structured_fields_escape_render_output();
     test_level_enabled_reports_stream_matches();
     test_bootstrap_load_applies_overrides();
+    test_bootstrap_load_applies_yaml_overrides();
+    test_configure_updates_runtime_safe_fields();
     test_bootstrap_load_rejects_invalid_build_version();
     test_file_stream_writes_new_run_file();
     test_buffer_saturation_writes_backup_warning();

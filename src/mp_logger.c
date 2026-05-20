@@ -10,6 +10,8 @@
 #include <string.h>
 #include <time.h>
 
+static int mp_logger_validate_config(const mp_logger_config_t *config);
+
 /* Read the monotonic clock used for worker deadlines and flush timeouts. */
 static int64_t mp_logger_now_monotonic_millis(void) {
     struct timespec now;
@@ -366,12 +368,13 @@ static void *mp_logger_worker_main(void *context) {
 
         {
             size_t index = 0;
-            size_t rendered_length = mp_logger_render_record(
+            size_t rendered_length = 0u;
+            (void)pthread_mutex_lock(&logger->stream_mutex);
+            rendered_length = mp_logger_render_record(
                 logger,
                 &record,
                 render_buffer,
                 logger->render_capacity);
-            (void)pthread_mutex_lock(&logger->stream_mutex);
             for (index = 0; index < logger->stream_count; index++) {
                 mp_logger_stream_t *stream = &logger->streams[index];
                 mp_log_status_t status = MP_LOG_STATUS_OK;
@@ -491,6 +494,67 @@ static uint_fast32_t mp_logger_level_range_mask(
     return mask;
 }
 
+/* Recompute the level mask after stream thresholds change at runtime. */
+static void mp_logger_refresh_enabled_level_mask(mp_logger_t *logger) {
+    size_t index = 0;
+    uint_fast32_t mask = 0u;
+    if (logger == NULL) {
+        return;
+    }
+    for (index = 0; index < logger->stream_count; index++) {
+        mask |= mp_logger_level_range_mask(
+            logger->streams[index].minimum_level,
+            logger->streams[index].maximum_level);
+    }
+    atomic_store(&logger->enabled_level_mask, mask);
+}
+
+/* Keep runtime reconfiguration to fields that do not require queue or sink reallocation. */
+static int mp_logger_runtime_config_is_compatible(
+    const mp_logger_t *logger,
+    const mp_logger_config_t *config) {
+    if (logger == NULL || config == NULL) {
+        return 0;
+    }
+    return logger->config.buffer_capacity == config->buffer_capacity &&
+        logger->config.message_capacity == config->message_capacity &&
+        logger->config.context_capacity == config->context_capacity &&
+        logger->config.field_capacity == config->field_capacity &&
+        logger->config.field_key_capacity == config->field_key_capacity &&
+        logger->config.field_value_capacity == config->field_value_capacity &&
+        strcmp(logger->config.log_directory, config->log_directory) == 0 &&
+        strcmp(logger->config.file_name_prefix, config->file_name_prefix) == 0 &&
+        strcmp(logger->config.backup_file_name_prefix, config->backup_file_name_prefix) == 0 &&
+        strcmp(logger->config.active_streams, config->active_streams) == 0 &&
+        strcmp(logger->config.udp_host, config->udp_host) == 0 &&
+        logger->config.udp_port == config->udp_port;
+}
+
+/* Update builtin stream thresholds in place while preserving custom stream registrations. */
+static void mp_logger_apply_config_to_streams(mp_logger_t *logger) {
+    size_t index = 0;
+    if (logger == NULL) {
+        return;
+    }
+    for (index = 0; index < logger->stream_count; index++) {
+        mp_logger_stream_t *stream = &logger->streams[index];
+        if (strcmp(stream->stream_name, MP_LOGGER_STREAM_STDOUT) == 0) {
+            stream->minimum_level = logger->config.stdout_min_level;
+            stream->maximum_level = logger->config.stdout_max_level;
+        } else if (strcmp(stream->stream_name, MP_LOGGER_STREAM_STDERR) == 0) {
+            stream->minimum_level = logger->config.stderr_min_level;
+            stream->maximum_level = logger->config.stderr_max_level;
+        } else if (strcmp(stream->stream_name, MP_LOGGER_STREAM_FILE) == 0) {
+            stream->minimum_level = logger->config.file_min_level;
+            stream->maximum_level = logger->config.file_max_level;
+        } else if (strcmp(stream->stream_name, MP_LOGGER_STREAM_UDP) == 0) {
+            stream->minimum_level = logger->config.udp_min_level;
+            stream->maximum_level = logger->config.udp_max_level;
+        }
+    }
+    mp_logger_refresh_enabled_level_mask(logger);
+}
+
 /* Reject duplicate stream names up front so sink fanout remains deterministic. */
 mp_log_status_t mp_logger_add_owned_stream(mp_logger_t *logger, const mp_logger_stream_t *stream) {
     size_t index = 0;
@@ -514,6 +578,59 @@ mp_log_status_t mp_logger_add_owned_stream(mp_logger_t *logger, const mp_logger_
         &logger->enabled_level_mask,
         mp_logger_level_range_mask(stream->minimum_level, stream->maximum_level));
     (void)pthread_mutex_unlock(&logger->stream_mutex);
+    return MP_LOG_STATUS_OK;
+}
+
+mp_log_status_t mp_logger_configure(mp_logger_t *logger, const mp_logger_config_t *config) {
+    mp_logger_config_t normalized_config;
+    if (logger == NULL || config == NULL) {
+        return MP_LOG_STATUS_INVALID_ARGUMENT;
+    }
+    if (!mp_logger_validate_config(config)) {
+        return MP_LOG_STATUS_CONFIG_ERROR;
+    }
+    normalized_config = *config;
+    mp_logger_sanitize_file_component(normalized_config.file_name_prefix);
+    mp_logger_sanitize_file_component(normalized_config.backup_file_name_prefix);
+    if (!mp_logger_runtime_config_is_compatible(logger, &normalized_config)) {
+        return MP_LOG_STATUS_CONFIG_ERROR;
+    }
+
+    (void)pthread_mutex_lock(&logger->stream_mutex);
+    mp_logger_copy_trimmed(
+        logger->config.service_name,
+        sizeof(logger->config.service_name),
+        normalized_config.service_name);
+    mp_logger_copy_trimmed(
+        logger->config.environment_name,
+        sizeof(logger->config.environment_name),
+        normalized_config.environment_name);
+    mp_logger_copy_trimmed(
+        logger->config.build_version,
+        sizeof(logger->config.build_version),
+        normalized_config.build_version);
+    logger->config.format = normalized_config.format;
+    logger->config.pretty_output = normalized_config.pretty_output;
+    logger->config.stdout_min_level = normalized_config.stdout_min_level;
+    logger->config.stdout_max_level = normalized_config.stdout_max_level;
+    logger->config.stderr_min_level = normalized_config.stderr_min_level;
+    logger->config.stderr_max_level = normalized_config.stderr_max_level;
+    logger->config.file_min_level = normalized_config.file_min_level;
+    logger->config.file_max_level = normalized_config.file_max_level;
+    logger->config.udp_min_level = normalized_config.udp_min_level;
+    logger->config.udp_max_level = normalized_config.udp_max_level;
+    mp_logger_apply_config_to_streams(logger);
+    (void)pthread_mutex_unlock(&logger->stream_mutex);
+    return MP_LOG_STATUS_OK;
+}
+
+mp_log_status_t mp_logger_get_config(const mp_logger_t *logger, mp_logger_config_t *out_config) {
+    if (logger == NULL || out_config == NULL) {
+        return MP_LOG_STATUS_INVALID_ARGUMENT;
+    }
+    (void)pthread_mutex_lock((pthread_mutex_t *)&logger->stream_mutex);
+    *out_config = logger->config;
+    (void)pthread_mutex_unlock((pthread_mutex_t *)&logger->stream_mutex);
     return MP_LOG_STATUS_OK;
 }
 

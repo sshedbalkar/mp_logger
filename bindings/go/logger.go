@@ -244,7 +244,7 @@ func DefaultConfig() Config {
 	return configFromC(config)
 }
 
-// LoadBootstrapConfig parses a bootstrap INI file into a Config without creating a logger.
+// LoadBootstrapConfig parses a bootstrap YAML or legacy INI file into a Config without creating a logger.
 func LoadBootstrapConfig(path string) (Config, error) {
 	cPath := C.CString(path)
 	defer C.free(unsafe.Pointer(cPath))
@@ -315,6 +315,33 @@ func (logger *Logger) Start() error {
 	return logger.withPtr("start", func(ptr *C.mp_logger_t) C.mp_log_status_t {
 		return C.mp_logger_start(ptr)
 	})
+}
+
+// Configure applies runtime-safe config changes to a live logger.
+func (logger *Logger) Configure(config Config) error {
+	cConfig, err := config.toC()
+	if err != nil {
+		return err
+	}
+	return logger.withPtr("configure", func(ptr *C.mp_logger_t) C.mp_log_status_t {
+		return C.mp_logger_configure(ptr, &cConfig)
+	})
+}
+
+// Config returns the current effective C logger config.
+func (logger *Logger) Config() (Config, error) {
+	logger.mu.RLock()
+	defer logger.mu.RUnlock()
+	if logger.ptr == nil {
+		return Config{}, ErrClosed
+	}
+
+	var config C.mp_logger_config_t
+	status := C.mp_logger_get_config(logger.ptr, &config)
+	if err := statusError("get_config", status); err != nil {
+		return Config{}, err
+	}
+	return configFromC(config), nil
 }
 
 // Log attempts to enqueue one record without blocking on sink I/O.

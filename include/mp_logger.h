@@ -170,7 +170,17 @@ mp_log_field_t mp_log_field_float64(const char *key, double value);
 void mp_logger_config_init_defaults(mp_logger_config_t *config);
 
 /*
- * Load a bootstrap INI file into out_config.
+ * Apply one section/key/value override to an initialized config.
+ * Use an empty section for service_name, environment_name, and build_version.
+ */
+mp_log_status_t mp_logger_config_apply_override(
+    mp_logger_config_t *config,
+    const char *section,
+    const char *key,
+    const char *value);
+
+/*
+ * Load a bootstrap YAML or legacy INI file into out_config.
  * Unknown sections, unknown keys, malformed values, and unreadable files are rejected instead
  * of being ignored.
  */
@@ -194,6 +204,15 @@ mp_log_status_t mp_logger_create_from_bootstrap(const char *config_path, mp_logg
  * records once the logger is started.
  */
 mp_log_status_t mp_logger_add_stream(mp_logger_t *logger, const mp_logger_stream_t *stream);
+
+/*
+ * Apply runtime-safe config changes to an existing logger.
+ * Queue capacities, storage paths, active stream topology, and UDP endpoints are init-only.
+ */
+mp_log_status_t mp_logger_configure(mp_logger_t *logger, const mp_logger_config_t *config);
+
+/* Copy the logger's current effective config into out_config. */
+mp_log_status_t mp_logger_get_config(const mp_logger_t *logger, mp_logger_config_t *out_config);
 
 /*
  * Start the worker thread that drains queued records to active streams.
