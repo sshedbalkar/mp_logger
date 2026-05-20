@@ -65,7 +65,7 @@ done
 build_dir="${build_dir:-$MP_LOGGER_SCRIPT_DEFAULT_RELEASE_BUILD_DIR}"
 install_dir="${install_dir:-$MP_LOGGER_SCRIPT_DEFAULT_INSTALL_DIR}"
 
-cmake -S . -B "$build_dir" \
+cmake --fresh -S . -B "$build_dir" \
   "-DMP_LOGGER_BUILD_TESTS=$MP_LOGGER_SCRIPT_DEFAULT_BUILD_TESTS_OFF" \
   "-DCMAKE_BUILD_TYPE=$MP_LOGGER_SCRIPT_DEFAULT_RELEASE_BUILD_TYPE"
 cmake --build "$build_dir"
