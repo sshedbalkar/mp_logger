@@ -4,6 +4,8 @@
 
 These rules describe the implementation-backed standards for the standalone logger library, its public C API, its built-in sinks, and its repo-local validation flow.
 
+Workspace baseline: [Engineering Standards](../../../../docs/engineering-standards.md), [Workflow](../../../../docs/workflow.md), and [Documentation Standards](../../../../docs/documentation-standards.md). This file specializes those rules for `mp_logger`.
+
 ## Runtime Model
 
 ```text

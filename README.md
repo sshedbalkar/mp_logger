@@ -2,6 +2,8 @@
 
 Standalone C logging library for low-latency services and tools.
 
+Workspace baseline: read `../../../docs/README.md` and `../../../docs/workflow.md` before local logger docs. Local docs specialize workspace rules for this library.
+
 ## Features
 
 - non-blocking log calls backed by a bounded in-memory buffer;

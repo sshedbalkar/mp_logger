@@ -2,6 +2,8 @@
 
 All commits in this repository must use a subject and a body. Do not create one-line commits.
 
+Workspace baseline: [Commit Message Standard](../../../../docs/commit-messages.md). This file remains the local hook validation target.
+
 The body is mandatory for every commit in this repository.
 
 ## Required Format

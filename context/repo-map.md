@@ -2,6 +2,7 @@
 
 ## Source Truth
 
+- `../../../../docs/`: workspace baseline for common engineering, workflow, documentation, naming, and commit-message rules.
 - `AGENTS.md`: bootstrap router, read order, and durable local rules.
 - `README.md`: module purpose, commands, public API summary, and structured field behavior.
 - `include/mp_logger.h`: public contract, including typed structured field APIs.

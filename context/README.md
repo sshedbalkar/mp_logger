@@ -1,5 +1,6 @@
 # Context Index
 
+- [Workspace docs](../../../../docs/README.md)
 - [Agent bootstrap](../AGENTS.md)
 - [Repo map](repo-map.md)
 - [Doc cards](doc-cards.md)
